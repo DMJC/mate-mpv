@@ -156,9 +156,8 @@ private:
     std::atomic<bool> wakeup_pending_{false};
 
     static void* get_proc_address(void* ctx, const char* name) {
-        // ctx points to a GdkGLContext (C type), provided by us below
-        GdkGLContext* gdk_ctx = static_cast<GdkGLContext*>(ctx);
-        return reinterpret_cast<void*>(gdk_gl_context_get_proc_address(gdk_ctx, name));
+        (void)ctx;
+        return reinterpret_cast<void*>(epoxy_get_proc_address(name));
     }
 
     static void wakeup_cb(void* ctx) {
