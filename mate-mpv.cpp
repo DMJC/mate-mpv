@@ -13,6 +13,7 @@
 #include <gtkmm.h>
 #include <gdk/gdkgl.h>
 #include <epoxy/gl.h>
+#include <epoxy/glx.h>
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
 
@@ -156,8 +157,16 @@ private:
     std::atomic<bool> wakeup_pending_{false};
 
     static void* get_proc_address(void* ctx, const char* name) {
+#if GTK_CHECK_VERSION(3, 16, 0)
+        // Available on newer GTK3; use the context-specific resolver when present.
+        GdkGLContext* gdk_ctx = static_cast<GdkGLContext*>(ctx);
+        return reinterpret_cast<void*>(gdk_gl_context_get_proc_address(gdk_ctx, name));
+#else
         (void)ctx;
-        return reinterpret_cast<void*>(epoxy_get_proc_address(name));
+        // Older GTK3 lacks gdk_gl_context_get_proc_address(). Use libepoxy GLX resolver.
+        return reinterpret_cast<void*>(epoxy_glXGetProcAddressARB(
+            reinterpret_cast<const GLubyte*>(name)));
+#endif
     }
 
     static void wakeup_cb(void* ctx) {
