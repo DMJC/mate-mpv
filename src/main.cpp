@@ -249,7 +249,7 @@ static void on_preferences_activate(GtkWidget*, gpointer user_data) {
     GtkWidget* dialog = gtk_dialog_new_with_buttons(
         "Preferences",
         GTK_WINDOW(state->window),
-        GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+        static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
         "_Close", GTK_RESPONSE_CLOSE,
         nullptr);
 
@@ -467,7 +467,7 @@ static void shutdown_app(GApplication*, gpointer user_data) {
 int main(int argc, char** argv) {
     AppState state;
 
-    GtkApplication* app = gtk_application_new("org.mate.mate-mpv", G_APPLICATION_FLAGS_NONE);
+    GtkApplication* app = gtk_application_new("org.mate.mate-mpv", G_APPLICATION_DEFAULT_FLAGS);
     g_signal_connect(app, "activate", G_CALLBACK(activate), &state);
     g_signal_connect(app, "shutdown", G_CALLBACK(shutdown_app), &state);
 
