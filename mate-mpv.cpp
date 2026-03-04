@@ -16,13 +16,16 @@
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -504,7 +507,6 @@ private:
         if (files.empty()) return;
 
         // Populate playlist
-        bool first = (playlist_store_->children().empty());
         for (const auto& f : files) {
             // Use basename as title
             auto base = Glib::path_get_basename(f);
@@ -521,7 +523,6 @@ private:
             apply_playlist_visibility();
         }
 
-        (void)first;
     }
 
     void on_open_tv() {
