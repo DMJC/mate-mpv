@@ -34,7 +34,8 @@ enum PlaylistColumns {
     COL_COUNT
 };
 
-static void ensure_mpv_running(AppState* state);
+static bool ensure_mpv_running(AppState* state);
+static bool launch_mpv_process(AppState* state, GtkWidget* video_widget);
 
 static std::string trim_copy(const std::string& value) {
     const auto start = value.find_first_not_of(" \t\r\n");
@@ -77,7 +78,7 @@ static void send_json_line(AppState* state, const std::string& line) {
 }
 
 static void connect_ipc_socket(AppState* state) {
-    if (state->socket_connection) {
+    if (state->socket_connection || !state->socket_client || state->ipc_socket_path.empty()) {
         return;
     }
 
@@ -98,8 +99,11 @@ static void connect_ipc_socket(AppState* state) {
 }
 
 static void send_loadfile(AppState* state, const std::string& uri, const std::string& mode) {
-    ensure_mpv_running(state);
-    connect_ipc_socket(state);
+    if (!ensure_mpv_running(state)) {
+        g_warning("mpv is not ready yet, skipping loadfile for '%s'", uri.c_str());
+        return;
+    }
+
     std::string command = "{\"command\": [\"loadfile\", \"" + json_escape(uri) + "\", \"" + mode + "\"]}";
     send_json_line(state, command);
 }
@@ -276,20 +280,22 @@ static void on_preferences_activate(GtkWidget*, gpointer user_data) {
     gtk_widget_destroy(dialog);
 }
 
-static void on_video_area_realize(GtkWidget* widget, gpointer user_data) {
-    auto* state = static_cast<AppState*>(user_data);
+static bool launch_mpv_process(AppState* state, GtkWidget* video_widget) {
+    if (state->mpv_process) {
+        return true;
+    }
 
-    GdkWindow* gdk_window = gtk_widget_get_window(widget);
+    if (!GTK_IS_WIDGET(video_widget) || !gtk_widget_get_realized(video_widget)) {
+        return false;
+    }
+
+    GdkWindow* gdk_window = gtk_widget_get_window(video_widget);
     if (!GDK_IS_X11_WINDOW(gdk_window)) {
         g_warning("This application currently expects an X11 backend for embedding mpv.");
-        return;
+        return false;
     }
 
     guint32 xid = gdk_x11_window_get_xid(gdk_window);
-
-    if (state->mpv_process) {
-        return;
-    }
 
     gchar* pid_component = g_strdup_printf("%d", getpid());
     state->ipc_socket_path = std::string(g_get_tmp_dir()) + "/mate-mpv-" + pid_component + ".sock";
@@ -315,15 +321,23 @@ static void on_video_area_realize(GtkWidget* widget, gpointer user_data) {
     if (!state->mpv_process) {
         g_warning("Failed to launch mpv: %s", error ? error->message : "unknown error");
         g_clear_error(&error);
-        return;
+        return false;
     }
 
+    return true;
+}
+
+static void on_video_area_realize(GtkWidget* widget, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    launch_mpv_process(state, widget);
     ensure_mpv_running(state);
 }
 
-static void ensure_mpv_running(AppState* state) {
+static bool ensure_mpv_running(AppState* state) {
     if (!state->mpv_process) {
-        return;
+        if (!launch_mpv_process(state, state->video_area)) {
+            return false;
+        }
     }
 
     if (state->socket_client == nullptr) {
@@ -331,7 +345,7 @@ static void ensure_mpv_running(AppState* state) {
     }
 
     if (state->socket_connection) {
-        return;
+        return true;
     }
 
     for (int i = 0; i < 20 && !state->socket_connection; ++i) {
@@ -340,6 +354,8 @@ static void ensure_mpv_running(AppState* state) {
             g_usleep(50 * 1000);
         }
     }
+
+    return state->socket_connection != nullptr;
 }
 
 static GtkWidget* create_menu_bar(AppState* state) {
