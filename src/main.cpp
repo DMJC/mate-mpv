@@ -1,5 +1,7 @@
 #include <gtk/gtk.h>
+#ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
+#endif
 
 #include <fstream>
 #include <string>
@@ -290,32 +292,43 @@ static bool launch_mpv_process(AppState* state, GtkWidget* video_widget) {
     }
 
     GdkWindow* gdk_window = gtk_widget_get_window(video_widget);
-    if (!GDK_IS_X11_WINDOW(gdk_window)) {
-        g_warning("This application currently expects an X11 backend for embedding mpv.");
-        return false;
-    }
-
-    guint32 xid = gdk_x11_window_get_xid(gdk_window);
+#ifndef GDK_WINDOWING_X11
+    (void)gdk_window;
+#endif
 
     gchar* pid_component = g_strdup_printf("%d", getpid());
     state->ipc_socket_path = std::string(g_get_tmp_dir()) + "/mate-mpv-" + pid_component + ".sock";
     g_free(pid_component);
 
-    std::string wid_arg = "--wid=" + std::to_string(xid);
     std::string ipc_arg = "--input-ipc-server=" + state->ipc_socket_path;
-
-    const char* argv[] = {
+    std::vector<std::string> args = {
         "mpv",
         "--idle=yes",
         "--force-window=yes",
-        "--keep-open=yes",
-        wid_arg.c_str(),
-        ipc_arg.c_str(),
-        nullptr
+        "--keep-open=yes"
     };
 
+#ifdef GDK_WINDOWING_X11
+    if (GDK_IS_X11_WINDOW(gdk_window)) {
+        guint32 xid = gdk_x11_window_get_xid(gdk_window);
+        args.emplace_back("--wid=" + std::to_string(xid));
+    } else
+#endif
+    {
+        g_message("Running on a non-X11 backend; mpv will use its own window on this platform.");
+    }
+
+    args.push_back(ipc_arg);
+
+    std::vector<const char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& arg : args) {
+        argv.push_back(arg.c_str());
+    }
+    argv.push_back(nullptr);
+
     GError* error = nullptr;
-    state->mpv_process = g_subprocess_newv(argv,
+    state->mpv_process = g_subprocess_newv(argv.data(),
                                            static_cast<GSubprocessFlags>(G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE),
                                            &error);
     if (!state->mpv_process) {
