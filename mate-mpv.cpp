@@ -13,6 +13,7 @@
 #include <gtkmm.h>
 #include <gdk/gdkgl.h>
 #include <epoxy/gl.h>
+#include <epoxy/egl.h>
 #include <epoxy/glx.h>
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
@@ -163,9 +164,14 @@ private:
         return reinterpret_cast<void*>(gdk_gl_context_get_proc_address(gdk_ctx, name));
 #else
         (void)ctx;
-        // Older GTK3 lacks gdk_gl_context_get_proc_address(). Use libepoxy GLX resolver.
+#if defined(GDK_WINDOWING_WAYLAND)
+        // Wayland stacks resolve GL entry points through EGL.
+        return reinterpret_cast<void*>(epoxy_eglGetProcAddress(name));
+#else
+        // X11 stacks resolve GL entry points through GLX.
         return reinterpret_cast<void*>(epoxy_glXGetProcAddressARB(
             reinterpret_cast<const GLubyte*>(name)));
+#endif
 #endif
     }
 
