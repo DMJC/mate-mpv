@@ -13,16 +13,21 @@
 #include <gtkmm.h>
 #include <gdk/gdkgl.h>
 #include <epoxy/gl.h>
+#include <epoxy/egl.h>
+#include <epoxy/glx.h>
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <iostream>
 #include <optional>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -153,9 +158,21 @@ private:
     std::atomic<bool> wakeup_pending_{false};
 
     static void* get_proc_address(void* ctx, const char* name) {
-        // ctx points to a GdkGLContext (C type), provided by us below
+#if GTK_CHECK_VERSION(3, 16, 0)
+        // Available on newer GTK3; use the context-specific resolver when present.
         GdkGLContext* gdk_ctx = static_cast<GdkGLContext*>(ctx);
         return reinterpret_cast<void*>(gdk_gl_context_get_proc_address(gdk_ctx, name));
+#else
+        (void)ctx;
+#if defined(GDK_WINDOWING_WAYLAND)
+        // Wayland stacks resolve GL entry points through EGL.
+        return reinterpret_cast<void*>(epoxy_eglGetProcAddress(name));
+#else
+        // X11 stacks resolve GL entry points through GLX.
+        return reinterpret_cast<void*>(epoxy_glXGetProcAddressARB(
+            reinterpret_cast<const GLubyte*>(name)));
+#endif
+#endif
     }
 
     static void wakeup_cb(void* ctx) {
@@ -504,7 +521,6 @@ private:
         if (files.empty()) return;
 
         // Populate playlist
-        bool first = (playlist_store_->children().empty());
         for (const auto& f : files) {
             // Use basename as title
             auto base = Glib::path_get_basename(f);
@@ -521,7 +537,6 @@ private:
             apply_playlist_visibility();
         }
 
-        (void)first;
     }
 
     void on_open_tv() {
