@@ -24,6 +24,9 @@ struct AppState {
     GtkWidget* playback_state_label = nullptr;
     GtkWidget* position_scale = nullptr;
     GtkWidget* volume_scale = nullptr;
+    GtkWidget* playback_controls = nullptr;
+    GtkWidget* player_context_menu = nullptr;
+    GtkWidget* show_controls_item = nullptr;
 
     GSubprocess* mpv_process = nullptr;
     GSocketClient* socket_client = nullptr;
@@ -33,6 +36,7 @@ struct AppState {
     std::string ipc_socket_path;
     bool fullscreen = false;
     bool suppress_position_seek = false;
+    std::string current_media_uri;
 };
 
 enum PlaylistColumns {
@@ -113,6 +117,9 @@ static void send_loadfile(AppState* state, const std::string& uri, const std::st
 
     std::string command = "{\"command\": [\"loadfile\", \"" + json_escape(uri) + "\", \"" + mode + "\"]}";
     send_json_line(state, command);
+    if (mode == "replace") {
+        state->current_media_uri = uri;
+    }
 }
 
 static void set_playback_state(AppState* state, const char* status) {
@@ -216,6 +223,35 @@ static void on_fullscreen_button_clicked(GtkWidget*, gpointer user_data) {
     if (state->fullscreen_toggle_item) {
         gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->fullscreen_toggle_item), state->fullscreen);
     }
+}
+
+
+static void on_copy_location_activate(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    if (state->current_media_uri.empty()) {
+        return;
+    }
+
+    GtkClipboard* clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+    gtk_clipboard_set_text(clipboard, state->current_media_uri.c_str(), -1);
+}
+
+static void on_toggle_controls(GtkCheckMenuItem* item, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    gboolean active = gtk_check_menu_item_get_active(item);
+    if (state->playback_controls) {
+        gtk_widget_set_visible(state->playback_controls, active);
+    }
+}
+
+static gboolean on_video_area_button_press(GtkWidget*, GdkEventButton* event, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    if (!event || event->type != GDK_BUTTON_PRESS || event->button != 3 || !state->player_context_menu) {
+        return FALSE;
+    }
+
+    gtk_menu_popup_at_pointer(GTK_MENU(state->player_context_menu), reinterpret_cast<GdkEvent*>(event));
+    return TRUE;
 }
 
 static void add_playlist_entry(AppState* state, const std::string& title, const std::string& uri) {
@@ -589,6 +625,44 @@ static GtkWidget* create_menu_bar(AppState* state) {
     return menubar;
 }
 
+
+static GtkWidget* create_player_context_menu(AppState* state) {
+    GtkWidget* menu = gtk_menu_new();
+
+    GtkWidget* pause_item = gtk_menu_item_new_with_label("Pause");
+    GtkWidget* stop_item = gtk_menu_item_new_with_label("Stop");
+    GtkWidget* open_item = gtk_menu_item_new_with_label("Open Ctrl+O");
+    GtkWidget* show_controls_item = gtk_check_menu_item_new_with_label("Show Controls");
+    GtkWidget* fullscreen_item = gtk_menu_item_new_with_label("Full Screen");
+    GtkWidget* copy_location_item = gtk_menu_item_new_with_label("Copy Location");
+    GtkWidget* preferences_item = gtk_menu_item_new_with_label("Preferences");
+    GtkWidget* quit_item = gtk_menu_item_new_with_label("Quit Ctrl+Q");
+
+    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(show_controls_item), TRUE);
+
+    g_signal_connect(pause_item, "activate", G_CALLBACK(on_play_pause_clicked), state);
+    g_signal_connect(stop_item, "activate", G_CALLBACK(on_stop_clicked), state);
+    g_signal_connect(open_item, "activate", G_CALLBACK(on_open_files_activate), state);
+    g_signal_connect(show_controls_item, "toggled", G_CALLBACK(on_toggle_controls), state);
+    g_signal_connect(fullscreen_item, "activate", G_CALLBACK(on_fullscreen_button_clicked), state);
+    g_signal_connect(copy_location_item, "activate", G_CALLBACK(on_copy_location_activate), state);
+    g_signal_connect(preferences_item, "activate", G_CALLBACK(on_preferences_activate), state);
+    g_signal_connect_swapped(quit_item, "activate", G_CALLBACK(gtk_window_close), state->window);
+
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), pause_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), stop_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), open_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), show_controls_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), fullscreen_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), copy_location_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), preferences_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), quit_item);
+
+    state->show_controls_item = show_controls_item;
+    return menu;
+}
+
 static void activate(GtkApplication* app, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
     state->app = app;
@@ -627,8 +701,12 @@ static void activate(GtkApplication* app, gpointer user_data) {
     gtk_paned_pack1(GTK_PANED(paned), state->video_area, TRUE, FALSE);
     gtk_paned_pack2(GTK_PANED(paned), state->playlist_scroller, FALSE, FALSE);
 
-    GtkWidget* controls = create_playback_controls(state);
-    gtk_box_pack_end(GTK_BOX(root), controls, FALSE, FALSE, 0);
+    state->playback_controls = create_playback_controls(state);
+    gtk_box_pack_end(GTK_BOX(root), state->playback_controls, FALSE, FALSE, 0);
+
+    state->player_context_menu = create_player_context_menu(state);
+    gtk_widget_set_events(state->video_area, gtk_widget_get_events(state->video_area) | GDK_BUTTON_PRESS_MASK);
+    g_signal_connect(state->video_area, "button-press-event", G_CALLBACK(on_video_area_button_press), state);
 
     gtk_widget_show_all(state->window);
 }
