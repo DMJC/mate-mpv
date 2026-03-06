@@ -27,6 +27,7 @@ struct AppState {
     GtkWidget* playback_controls = nullptr;
     GtkWidget* player_context_menu = nullptr;
     GtkWidget* show_controls_item = nullptr;
+    GtkWidget* menubar = nullptr;
 
     GSubprocess* mpv_process = nullptr;
     GSocketClient* socket_client = nullptr;
@@ -47,6 +48,29 @@ enum PlaylistColumns {
 
 static bool ensure_mpv_running(AppState* state);
 static bool launch_mpv_process(AppState* state, GtkWidget* video_widget);
+
+static void set_menubar_visibility(AppState* state, bool visible) {
+    if (!state->menubar) {
+        return;
+    }
+    gtk_widget_set_visible(state->menubar, visible);
+}
+
+static void set_fullscreen_state(AppState* state, bool fullscreen) {
+    if (fullscreen) {
+        gtk_window_fullscreen(GTK_WINDOW(state->window));
+        state->fullscreen = true;
+        set_menubar_visibility(state, false);
+    } else {
+        gtk_window_unfullscreen(GTK_WINDOW(state->window));
+        state->fullscreen = false;
+        set_menubar_visibility(state, true);
+    }
+
+    if (state->fullscreen_toggle_item) {
+        gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->fullscreen_toggle_item), state->fullscreen);
+    }
+}
 
 static std::string trim_copy(const std::string& value) {
     const auto start = value.find_first_not_of(" \t\r\n");
@@ -213,16 +237,7 @@ static void on_volume_value_changed(GtkRange* range, gpointer user_data) {
 
 static void on_fullscreen_button_clicked(GtkWidget*, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
-    if (state->fullscreen) {
-        gtk_window_unfullscreen(GTK_WINDOW(state->window));
-        state->fullscreen = false;
-    } else {
-        gtk_window_fullscreen(GTK_WINDOW(state->window));
-        state->fullscreen = true;
-    }
-    if (state->fullscreen_toggle_item) {
-        gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->fullscreen_toggle_item), state->fullscreen);
-    }
+    set_fullscreen_state(state, !state->fullscreen);
 }
 
 
@@ -384,13 +399,18 @@ static void on_toggle_playlist(GtkCheckMenuItem* item, gpointer user_data) {
 static void on_toggle_fullscreen(GtkCheckMenuItem* item, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
     gboolean active = gtk_check_menu_item_get_active(item);
-    if (active) {
-        gtk_window_fullscreen(GTK_WINDOW(state->window));
-        state->fullscreen = true;
-    } else {
-        gtk_window_unfullscreen(GTK_WINDOW(state->window));
-        state->fullscreen = false;
+    set_fullscreen_state(state, active);
+}
+
+static gboolean on_window_motion_notify(GtkWidget*, GdkEventMotion* event, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    if (!state->fullscreen || !state->menubar || !event) {
+        return FALSE;
     }
+
+    const bool near_top_edge = event->y <= 1.0;
+    set_menubar_visibility(state, near_top_edge);
+    return FALSE;
 }
 
 static void on_menu_placeholder_activate(GtkWidget* widget, gpointer) {
@@ -578,16 +598,27 @@ static bool ensure_mpv_running(AppState* state) {
     return state->socket_connection != nullptr;
 }
 
+static void on_about_activate(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    gtk_show_about_dialog(GTK_WINDOW(state->window),
+                          "program-name", "mate-mpv",
+                          "comments", "The spiritual successor to GNOME-Mplayer",
+                          "version", "0.1",
+                          nullptr);
+}
+
 static GtkWidget* create_menu_bar(AppState* state) {
     GtkWidget* menubar = gtk_menu_bar_new();
 
     GtkWidget* file_menu_item = gtk_menu_item_new_with_mnemonic("_File");
     GtkWidget* edit_menu_item = gtk_menu_item_new_with_mnemonic("_Edit");
     GtkWidget* view_menu_item = gtk_menu_item_new_with_mnemonic("_View");
+    GtkWidget* help_menu_item = gtk_menu_item_new_with_mnemonic("_Help");
 
     GtkWidget* file_menu = gtk_menu_new();
     GtkWidget* edit_menu = gtk_menu_new();
     GtkWidget* view_menu = gtk_menu_new();
+    GtkWidget* help_menu = gtk_menu_new();
 
     GtkWidget* open_files = gtk_menu_item_new_with_label("Open File(s)...");
     GtkWidget* open_tv = gtk_menu_item_new_with_label("Open TV://");
@@ -603,10 +634,13 @@ static GtkWidget* create_menu_bar(AppState* state) {
     gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), quit_item);
 
     GtkWidget* prefs_item = gtk_menu_item_new_with_label("Preferences");
+    GtkWidget* about_item = gtk_menu_item_new_with_label("About");
     g_signal_connect(prefs_item, "activate", G_CALLBACK(on_preferences_activate), state);
+    g_signal_connect(about_item, "activate", G_CALLBACK(on_about_activate), state);
     gtk_menu_shell_append(GTK_MENU_SHELL(edit_menu), prefs_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(help_menu), about_item);
 
-    GtkWidget* playlist_item = gtk_menu_item_new_with_label("Playlist");
+    GtkWidget* playlist_item = gtk_check_menu_item_new_with_label("Playlist");
     GtkWidget* media_info_item = gtk_menu_item_new_with_label("Media Info");
     GtkWidget* details_item = gtk_menu_item_new_with_label("Details");
     GtkWidget* audio_meter_item = gtk_menu_item_new_with_label("Audio Meter");
@@ -635,10 +669,11 @@ static GtkWidget* create_menu_bar(AppState* state) {
     GtkWidget* controls_item = gtk_check_menu_item_new_with_label("Controls C");
     GtkWidget* video_picture_adjustments_item = gtk_menu_item_new_with_label("Video Picture Adjustments.");
 
+    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(playlist_item), TRUE);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(subtitles_item), TRUE);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(controls_item), TRUE);
 
-    g_signal_connect(playlist_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(playlist_item, "toggled", G_CALLBACK(on_toggle_playlist), state);
     g_signal_connect(media_info_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
     g_signal_connect(details_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
     g_signal_connect(audio_meter_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
@@ -701,12 +736,14 @@ static GtkWidget* create_menu_bar(AppState* state) {
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(file_menu_item), file_menu);
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(edit_menu_item), edit_menu);
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(view_menu_item), view_menu);
+    gtk_menu_item_set_submenu(GTK_MENU_ITEM(help_menu_item), help_menu);
 
     gtk_menu_shell_append(GTK_MENU_SHELL(menubar), file_menu_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(menubar), edit_menu_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(menubar), view_menu_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menubar), help_menu_item);
 
-    state->playlist_toggle_item = nullptr;
+    state->playlist_toggle_item = playlist_item;
     state->fullscreen_toggle_item = nullptr;
 
     return menubar;
@@ -764,6 +801,7 @@ static void activate(GtkApplication* app, gpointer user_data) {
     gtk_container_add(GTK_CONTAINER(state->window), root);
 
     GtkWidget* menubar = create_menu_bar(state);
+    state->menubar = menubar;
     gtk_box_pack_start(GTK_BOX(root), menubar, FALSE, FALSE, 0);
 
     GtkWidget* paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
@@ -796,6 +834,9 @@ static void activate(GtkApplication* app, gpointer user_data) {
     state->player_context_menu = create_player_context_menu(state);
     gtk_widget_set_events(state->video_area, gtk_widget_get_events(state->video_area) | GDK_BUTTON_PRESS_MASK);
     g_signal_connect(state->video_area, "button-press-event", G_CALLBACK(on_video_area_button_press), state);
+
+    gtk_widget_add_events(state->window, GDK_POINTER_MOTION_MASK);
+    g_signal_connect(state->window, "motion-notify-event", G_CALLBACK(on_window_motion_notify), state);
 
     gtk_widget_show_all(state->window);
 }
