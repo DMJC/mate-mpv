@@ -659,6 +659,8 @@ static GtkWidget* create_player_context_menu(AppState* state) {
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), preferences_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), quit_item);
 
+    gtk_widget_show_all(menu);
+
     state->show_controls_item = show_controls_item;
     return menu;
 }
