@@ -20,6 +20,10 @@ struct AppState {
     GtkWidget* playlist_view = nullptr;
     GtkListStore* playlist_store = nullptr;
     GtkWidget* playlist_toggle_item = nullptr;
+    GtkWidget* fullscreen_toggle_item = nullptr;
+    GtkWidget* playback_state_label = nullptr;
+    GtkWidget* position_scale = nullptr;
+    GtkWidget* volume_scale = nullptr;
 
     GSubprocess* mpv_process = nullptr;
     GSocketClient* socket_client = nullptr;
@@ -28,6 +32,7 @@ struct AppState {
 
     std::string ipc_socket_path;
     bool fullscreen = false;
+    bool suppress_position_seek = false;
 };
 
 enum PlaylistColumns {
@@ -108,6 +113,109 @@ static void send_loadfile(AppState* state, const std::string& uri, const std::st
 
     std::string command = "{\"command\": [\"loadfile\", \"" + json_escape(uri) + "\", \"" + mode + "\"]}";
     send_json_line(state, command);
+}
+
+static void set_playback_state(AppState* state, const char* status) {
+    if (!state->playback_state_label) {
+        return;
+    }
+    std::string text = std::string("Playback state: ") + status;
+    gtk_label_set_text(GTK_LABEL(state->playback_state_label), text.c_str());
+}
+
+static void send_seek_relative(AppState* state, int seconds) {
+    if (!ensure_mpv_running(state)) {
+        return;
+    }
+    std::string command = "{\"command\": [\"seek\", " + std::to_string(seconds) + ", \"relative\"]}";
+    send_json_line(state, command);
+}
+
+static void send_seek_percent(AppState* state, double percent) {
+    if (!ensure_mpv_running(state)) {
+        return;
+    }
+    std::string command = "{\"command\": [\"seek\", " + std::to_string(percent) + ", \"absolute-percent\"]}";
+    send_json_line(state, command);
+}
+
+static void on_return_to_start_clicked(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    send_seek_percent(state, 0.0);
+    state->suppress_position_seek = true;
+    gtk_range_set_value(GTK_RANGE(state->position_scale), 0.0);
+    state->suppress_position_seek = false;
+    set_playback_state(state, "Playing");
+}
+
+static void on_rewind_clicked(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    send_seek_relative(state, -10);
+    set_playback_state(state, "Playing");
+}
+
+static void on_play_pause_clicked(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    if (!ensure_mpv_running(state)) {
+        return;
+    }
+    send_json_line(state, "{\"command\": [\"cycle\", \"pause\"]}");
+    const char* text = gtk_label_get_text(GTK_LABEL(state->playback_state_label));
+    if (g_str_has_suffix(text, "Paused")) {
+        set_playback_state(state, "Playing");
+    } else {
+        set_playback_state(state, "Paused");
+    }
+}
+
+static void on_stop_clicked(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    if (!ensure_mpv_running(state)) {
+        return;
+    }
+    send_json_line(state, "{\"command\": [\"stop\"]}");
+    state->suppress_position_seek = true;
+    gtk_range_set_value(GTK_RANGE(state->position_scale), 0.0);
+    state->suppress_position_seek = false;
+    set_playback_state(state, "Stopped");
+}
+
+static void on_fast_forward_clicked(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    send_seek_relative(state, 10);
+    set_playback_state(state, "Playing");
+}
+
+static void on_position_value_changed(GtkRange* range, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    if (state->suppress_position_seek) {
+        return;
+    }
+    send_seek_percent(state, gtk_range_get_value(range));
+}
+
+static void on_volume_value_changed(GtkRange* range, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    if (!ensure_mpv_running(state)) {
+        return;
+    }
+    std::string command = "{\"command\": [\"set_property\", \"volume\", " +
+                          std::to_string(gtk_range_get_value(range)) + "]}";
+    send_json_line(state, command);
+}
+
+static void on_fullscreen_button_clicked(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    if (state->fullscreen) {
+        gtk_window_unfullscreen(GTK_WINDOW(state->window));
+        state->fullscreen = false;
+    } else {
+        gtk_window_fullscreen(GTK_WINDOW(state->window));
+        state->fullscreen = true;
+    }
+    if (state->fullscreen_toggle_item) {
+        gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->fullscreen_toggle_item), state->fullscreen);
+    }
 }
 
 static void add_playlist_entry(AppState* state, const std::string& title, const std::string& uri) {
@@ -247,6 +355,64 @@ static void on_toggle_fullscreen(GtkCheckMenuItem* item, gpointer user_data) {
         gtk_window_unfullscreen(GTK_WINDOW(state->window));
         state->fullscreen = false;
     }
+}
+
+static GtkWidget* create_playback_controls(AppState* state) {
+    GtkWidget* controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_container_set_border_width(GTK_CONTAINER(controls), 8);
+
+    GtkWidget* center_column = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_hexpand(center_column, TRUE);
+
+    GtkWidget* button_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget* start_button = gtk_button_new_with_label("Return to Start");
+    GtkWidget* rewind_button = gtk_button_new_with_label("Rewind");
+    GtkWidget* play_pause_button = gtk_button_new_with_label("Play/Pause");
+    GtkWidget* stop_button = gtk_button_new_with_label("Stop");
+    GtkWidget* fast_forward_button = gtk_button_new_with_label("Fast Forward");
+
+    gtk_box_pack_start(GTK_BOX(button_row), start_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(button_row), rewind_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(button_row), play_pause_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(button_row), stop_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(button_row), fast_forward_button, FALSE, FALSE, 0);
+
+    state->position_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 100.0, 1.0);
+    gtk_scale_set_draw_value(GTK_SCALE(state->position_scale), FALSE);
+    gtk_widget_set_hexpand(state->position_scale, TRUE);
+
+    state->playback_state_label = gtk_label_new("Playback state: Stopped");
+    gtk_label_set_xalign(GTK_LABEL(state->playback_state_label), 0.0f);
+
+    gtk_box_pack_start(GTK_BOX(center_column), button_row, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(center_column), state->position_scale, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(center_column), state->playback_state_label, FALSE, FALSE, 0);
+
+    GtkWidget* right_column = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget* volume_label = gtk_label_new("Volume");
+    state->volume_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 100.0, 1.0);
+    gtk_range_set_value(GTK_RANGE(state->volume_scale), 100.0);
+    gtk_widget_set_size_request(state->volume_scale, 140, -1);
+    gtk_scale_set_draw_value(GTK_SCALE(state->volume_scale), TRUE);
+    GtkWidget* fullscreen_button = gtk_button_new_with_label("Fullscreen");
+
+    gtk_box_pack_start(GTK_BOX(right_column), volume_label, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(right_column), state->volume_scale, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(right_column), fullscreen_button, FALSE, FALSE, 0);
+
+    gtk_box_pack_start(GTK_BOX(controls), center_column, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(controls), right_column, FALSE, FALSE, 0);
+
+    g_signal_connect(start_button, "clicked", G_CALLBACK(on_return_to_start_clicked), state);
+    g_signal_connect(rewind_button, "clicked", G_CALLBACK(on_rewind_clicked), state);
+    g_signal_connect(play_pause_button, "clicked", G_CALLBACK(on_play_pause_clicked), state);
+    g_signal_connect(stop_button, "clicked", G_CALLBACK(on_stop_clicked), state);
+    g_signal_connect(fast_forward_button, "clicked", G_CALLBACK(on_fast_forward_clicked), state);
+    g_signal_connect(state->position_scale, "value-changed", G_CALLBACK(on_position_value_changed), state);
+    g_signal_connect(state->volume_scale, "value-changed", G_CALLBACK(on_volume_value_changed), state);
+    g_signal_connect(fullscreen_button, "clicked", G_CALLBACK(on_fullscreen_button_clicked), state);
+
+    return controls;
 }
 
 static void on_preferences_activate(GtkWidget*, gpointer user_data) {
@@ -418,6 +584,7 @@ static GtkWidget* create_menu_bar(AppState* state) {
     gtk_menu_shell_append(GTK_MENU_SHELL(menubar), view_menu_item);
 
     state->playlist_toggle_item = playlist_item;
+    state->fullscreen_toggle_item = fullscreen_item;
 
     return menubar;
 }
@@ -459,6 +626,9 @@ static void activate(GtkApplication* app, gpointer user_data) {
 
     gtk_paned_pack1(GTK_PANED(paned), state->video_area, TRUE, FALSE);
     gtk_paned_pack2(GTK_PANED(paned), state->playlist_scroller, FALSE, FALSE);
+
+    GtkWidget* controls = create_playback_controls(state);
+    gtk_box_pack_end(GTK_BOX(root), controls, FALSE, FALSE, 0);
 
     gtk_widget_show_all(state->window);
 }
