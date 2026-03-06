@@ -20,6 +20,7 @@ struct AppState {
     GtkWidget* playlist_view = nullptr;
     GtkListStore* playlist_store = nullptr;
     GtkWidget* playlist_toggle_item = nullptr;
+    GtkWidget* context_playlist_toggle_item = nullptr;
     GtkWidget* fullscreen_toggle_item = nullptr;
     GtkWidget* playback_state_label = nullptr;
     GtkWidget* position_scale = nullptr;
@@ -394,6 +395,18 @@ static void on_toggle_playlist(GtkCheckMenuItem* item, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
     gboolean active = gtk_check_menu_item_get_active(item);
     gtk_widget_set_visible(state->playlist_scroller, active);
+
+    if (state->playlist_toggle_item && GTK_WIDGET(item) != state->playlist_toggle_item) {
+        g_signal_handlers_block_by_func(state->playlist_toggle_item, reinterpret_cast<gpointer>(on_toggle_playlist), state);
+        gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->playlist_toggle_item), active);
+        g_signal_handlers_unblock_by_func(state->playlist_toggle_item, reinterpret_cast<gpointer>(on_toggle_playlist), state);
+    }
+
+    if (state->context_playlist_toggle_item && GTK_WIDGET(item) != state->context_playlist_toggle_item) {
+        g_signal_handlers_block_by_func(state->context_playlist_toggle_item, reinterpret_cast<gpointer>(on_toggle_playlist), state);
+        gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->context_playlist_toggle_item), active);
+        g_signal_handlers_unblock_by_func(state->context_playlist_toggle_item, reinterpret_cast<gpointer>(on_toggle_playlist), state);
+    }
 }
 
 static void on_toggle_fullscreen(GtkCheckMenuItem* item, gpointer user_data) {
@@ -756,17 +769,20 @@ static GtkWidget* create_player_context_menu(AppState* state) {
     GtkWidget* pause_item = gtk_menu_item_new_with_label("Pause");
     GtkWidget* stop_item = gtk_menu_item_new_with_label("Stop");
     GtkWidget* open_item = gtk_menu_item_new_with_label("Open Ctrl+O");
+    GtkWidget* playlist_item = gtk_check_menu_item_new_with_label("Playlist");
     GtkWidget* show_controls_item = gtk_check_menu_item_new_with_label("Show Controls");
     GtkWidget* fullscreen_item = gtk_menu_item_new_with_label("Full Screen");
     GtkWidget* copy_location_item = gtk_menu_item_new_with_label("Copy Location");
     GtkWidget* preferences_item = gtk_menu_item_new_with_label("Preferences");
     GtkWidget* quit_item = gtk_menu_item_new_with_label("Quit Ctrl+Q");
 
+    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(playlist_item), TRUE);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(show_controls_item), TRUE);
 
     g_signal_connect(pause_item, "activate", G_CALLBACK(on_play_pause_clicked), state);
     g_signal_connect(stop_item, "activate", G_CALLBACK(on_stop_clicked), state);
     g_signal_connect(open_item, "activate", G_CALLBACK(on_open_files_activate), state);
+    g_signal_connect(playlist_item, "toggled", G_CALLBACK(on_toggle_playlist), state);
     g_signal_connect(show_controls_item, "toggled", G_CALLBACK(on_toggle_controls), state);
     g_signal_connect(fullscreen_item, "activate", G_CALLBACK(on_fullscreen_button_clicked), state);
     g_signal_connect(copy_location_item, "activate", G_CALLBACK(on_copy_location_activate), state);
@@ -777,6 +793,7 @@ static GtkWidget* create_player_context_menu(AppState* state) {
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), stop_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), gtk_separator_menu_item_new());
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), open_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(menu), playlist_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), show_controls_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), fullscreen_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(menu), copy_location_item);
@@ -786,6 +803,7 @@ static GtkWidget* create_player_context_menu(AppState* state) {
     gtk_widget_show_all(menu);
 
     state->show_controls_item = show_controls_item;
+    state->context_playlist_toggle_item = playlist_item;
     return menu;
 }
 
