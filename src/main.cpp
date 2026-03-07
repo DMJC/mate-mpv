@@ -147,7 +147,7 @@ static void send_seek_percent(AppState* state, double percent) {
 }
 
 static void* get_proc_address(void*, const char* name) {
-    const auto proc = eglGetProcAddress(reinterpret_cast<const EGLchar*>(name));
+    const auto proc = eglGetProcAddress(name);
     return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(proc));
 }
 
