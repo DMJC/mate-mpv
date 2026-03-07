@@ -44,6 +44,7 @@ struct AppState {
 
     bool fullscreen = false;
     bool suppress_position_seek = false;
+    guint position_update_source = 0;
     std::string current_media_uri;
 };
 
@@ -311,6 +312,34 @@ static void on_position_value_changed(GtkRange* range, gpointer user_data) {
     if (!state->suppress_position_seek) {
         send_seek_percent(state, gtk_range_get_value(range));
     }
+}
+
+static gboolean update_position_scale(gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    if (!state->position_scale || !state->mpv) {
+        return G_SOURCE_CONTINUE;
+    }
+
+    double duration = 0.0;
+    double time_pos = 0.0;
+    if (mpv_get_property(state->mpv, "duration", MPV_FORMAT_DOUBLE, &duration) < 0 || duration <= 0.0) {
+        return G_SOURCE_CONTINUE;
+    }
+    if (mpv_get_property(state->mpv, "time-pos", MPV_FORMAT_DOUBLE, &time_pos) < 0) {
+        return G_SOURCE_CONTINUE;
+    }
+
+    double percent = (time_pos / duration) * 100.0;
+    if (percent < 0.0) {
+        percent = 0.0;
+    } else if (percent > 100.0) {
+        percent = 100.0;
+    }
+
+    state->suppress_position_seek = true;
+    gtk_range_set_value(GTK_RANGE(state->position_scale), percent);
+    state->suppress_position_seek = false;
+    return G_SOURCE_CONTINUE;
 }
 
 static void on_volume_value_changed(GtkRange* range, gpointer user_data) {
@@ -848,10 +877,19 @@ static void activate(GtkApplication* app, gpointer user_data) {
     g_signal_connect(state->window, "key-press-event", G_CALLBACK(on_window_key_press), state);
 
     gtk_widget_show_all(state->window);
+
+    if (state->position_update_source == 0) {
+        state->position_update_source = g_timeout_add(250, update_position_scale, state);
+    }
 }
 
 static void shutdown_app(GApplication*, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
+
+    if (state->position_update_source != 0) {
+        g_source_remove(state->position_update_source);
+        state->position_update_source = 0;
+    }
 
     if (state->mpv) {
         run_mpv_command(state, {"quit"});
