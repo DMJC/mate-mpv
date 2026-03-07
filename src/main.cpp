@@ -106,7 +106,8 @@ static bool ensure_mpv_running(AppState* state) {
     mpv_set_option_string(state->mpv, "keep-open", "yes");
     mpv_set_option_string(state->mpv, "force-window", "no");
     mpv_set_option_string(state->mpv, "vo", "libmpv");
-    mpv_set_option_string(state->mpv, "hwdec", "auto-safe");
+    mpv_set_option_string(state->mpv, "gpu-api", "opengl");
+    mpv_set_option_string(state->mpv, "hwdec", "no");
 
     if (mpv_initialize(state->mpv) < 0) {
         g_warning("Failed to initialize mpv");
@@ -240,7 +241,10 @@ static gboolean on_video_area_render(GtkGLArea* area, GdkGLContext*, gpointer us
     const int width = gtk_widget_get_allocated_width(GTK_WIDGET(area));
     const int height = gtk_widget_get_allocated_height(GTK_WIDGET(area));
 
-    mpv_opengl_fbo fbo{.fbo = 0, .w = width, .h = height, .internal_format = 0};
+    GLint bound_fbo = 0;
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &bound_fbo);
+
+    mpv_opengl_fbo fbo{.fbo = bound_fbo, .w = width, .h = height, .internal_format = 0};
     int flip_y = 1;
     mpv_render_param params[] = {
         {MPV_RENDER_PARAM_OPENGL_FBO, &fbo},
