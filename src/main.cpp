@@ -53,6 +53,8 @@ enum PlaylistColumns {
     COL_COUNT
 };
 
+static void on_open_files_activate(GtkWidget*, gpointer user_data);
+
 static void set_playback_state(AppState* state, const char* status) {
     if (!state->playback_state_label) {
         return;
@@ -351,6 +353,35 @@ static gboolean on_video_area_button_press(GtkWidget*, GdkEventButton* event, gp
     }
     gtk_menu_popup_at_pointer(GTK_MENU(state->player_context_menu), reinterpret_cast<GdkEvent*>(event));
     return TRUE;
+}
+
+static gboolean on_window_key_press(GtkWidget*, GdkEventKey* event, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    if (!event) {
+        return FALSE;
+    }
+
+    const guint modifiers = event->state & gtk_accelerator_get_default_mod_mask();
+    if (modifiers == GDK_CONTROL_MASK && (event->keyval == GDK_KEY_o || event->keyval == GDK_KEY_O)) {
+        on_open_files_activate(nullptr, state);
+        return TRUE;
+    }
+
+    if (modifiers != 0) {
+        return FALSE;
+    }
+
+    if (event->keyval == GDK_KEY_f || event->keyval == GDK_KEY_F) {
+        set_fullscreen_state(state, !state->fullscreen);
+        return TRUE;
+    }
+
+    if (event->keyval == GDK_KEY_space) {
+        on_play_pause_clicked(nullptr, state);
+        return TRUE;
+    }
+
+    return FALSE;
 }
 
 static void add_playlist_entry(AppState* state, const std::string& title, const std::string& uri) {
@@ -792,8 +823,9 @@ static void activate(GtkApplication* app, gpointer user_data) {
     gtk_widget_set_events(state->video_area, gtk_widget_get_events(state->video_area) | GDK_BUTTON_PRESS_MASK);
     g_signal_connect(state->video_area, "button-press-event", G_CALLBACK(on_video_area_button_press), state);
 
-    gtk_widget_add_events(state->window, GDK_POINTER_MOTION_MASK);
+    gtk_widget_add_events(state->window, GDK_POINTER_MOTION_MASK | GDK_KEY_PRESS_MASK);
     g_signal_connect(state->window, "motion-notify-event", G_CALLBACK(on_window_motion_notify), state);
+    g_signal_connect(state->window, "key-press-event", G_CALLBACK(on_window_key_press), state);
 
     gtk_widget_show_all(state->window);
 }
