@@ -104,8 +104,8 @@ static bool ensure_mpv_running(AppState* state) {
     mpv_set_option_string(state->mpv, "terminal", "yes");
     mpv_set_option_string(state->mpv, "idle", "yes");
     mpv_set_option_string(state->mpv, "keep-open", "yes");
-    mpv_set_option_string(state->mpv, "vo", "gpu-next");
-    mpv_set_option_string(state->mpv, "gpu-context", "wayland");
+    mpv_set_option_string(state->mpv, "force-window", "no");
+    mpv_set_option_string(state->mpv, "vo", "libmpv");
     mpv_set_option_string(state->mpv, "hwdec", "auto-safe");
 
     if (mpv_initialize(state->mpv) < 0) {
