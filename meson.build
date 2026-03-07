@@ -4,10 +4,11 @@ project('mate-mpv', 'cpp',
 
 gtk_dep = dependency('gtk+-3.0')
 mpv_dep = dependency('mpv')
+epoxy_dep = dependency('epoxy')
 
 executable(
   'mate-mpv',
   'src/main.cpp',
-  dependencies: [gtk_dep, mpv_dep],
+  dependencies: [gtk_dep, mpv_dep, epoxy_dep],
   install: true
 )

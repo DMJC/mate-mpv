@@ -1,4 +1,5 @@
 #include <gtk/gtk.h>
+#include <epoxy/gl.h>
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
 
@@ -133,13 +134,8 @@ static void send_seek_percent(AppState* state, double percent) {
     run_mpv_command(state, {"seek", pct.c_str(), "absolute-percent"});
 }
 
-static gpointer get_proc_address(void* ctx, const char* name) {
-    auto* area = GTK_GL_AREA(ctx);
-    GdkGLContext* gl_context = gtk_gl_area_get_context(area);
-    if (!gl_context) {
-        return nullptr;
-    }
-    return gdk_gl_context_get_proc_address(gl_context, name);
+static void* get_proc_address(void*, const char* name) {
+    return reinterpret_cast<void*>(epoxy_get_proc_address(name));
 }
 
 static gboolean queue_video_redraw(gpointer user_data) {
