@@ -124,8 +124,9 @@ static void run_mpv_command(AppState* state, std::vector<const char*> args) {
         return;
     }
     args.push_back(nullptr);
-    if (mpv_command_async(state->mpv, 0, args.data()) < 0) {
-        g_warning("mpv command failed");
+    const int status = mpv_command(state->mpv, args.data());
+    if (status < 0) {
+        g_warning("mpv command failed: %s", mpv_error_string(status));
     }
 }
 
@@ -273,15 +274,14 @@ static void on_rewind_clicked(GtkWidget*, gpointer user_data) {
 
 static void on_play_pause_clicked(GtkWidget*, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
-    if (!ensure_mpv_running(state)) {
-        return;
-    }
+    run_mpv_command(state, {"cycle", "pause"});
 
-    int pause = 0;
-    mpv_get_property(state->mpv, "pause", MPV_FORMAT_FLAG, &pause);
-    pause = !pause;
-    mpv_set_property(state->mpv, "pause", MPV_FORMAT_FLAG, &pause);
-    set_playback_state(state, pause ? "Paused" : "Playing");
+    const char* label = gtk_label_get_text(GTK_LABEL(state->playback_state_label));
+    if (g_str_has_suffix(label, "Paused")) {
+        set_playback_state(state, "Playing");
+    } else {
+        set_playback_state(state, "Paused");
+    }
 }
 
 static void on_stop_clicked(GtkWidget*, gpointer user_data) {
