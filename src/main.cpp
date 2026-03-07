@@ -381,6 +381,26 @@ static gboolean on_window_key_press(GtkWidget*, GdkEventKey* event, gpointer use
         return TRUE;
     }
 
+    if (event->keyval == GDK_KEY_c || event->keyval == GDK_KEY_C) {
+        if (state->show_controls_item) {
+            const gboolean controls_visible = gtk_widget_get_visible(state->playback_controls);
+            gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->show_controls_item), !controls_visible);
+        } else {
+            gtk_widget_set_visible(state->playback_controls, !gtk_widget_get_visible(state->playback_controls));
+        }
+        return TRUE;
+    }
+
+    if (event->keyval == GDK_KEY_p || event->keyval == GDK_KEY_P) {
+        const gboolean playlist_visible = gtk_widget_get_visible(state->playlist_scroller);
+        if (state->playlist_toggle_item) {
+            gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->playlist_toggle_item), !playlist_visible);
+        } else {
+            gtk_widget_set_visible(state->playlist_scroller, !playlist_visible);
+        }
+        return TRUE;
+    }
+
     return FALSE;
 }
 
