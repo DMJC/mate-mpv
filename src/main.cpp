@@ -106,8 +106,7 @@ static bool ensure_mpv_running(AppState* state) {
     mpv_set_option_string(state->mpv, "keep-open", "yes");
     mpv_set_option_string(state->mpv, "force-window", "no");
     mpv_set_option_string(state->mpv, "vo", "libmpv");
-    mpv_set_option_string(state->mpv, "gpu-api", "opengl");
-    mpv_set_option_string(state->mpv, "hwdec", "no");
+    mpv_set_option_string(state->mpv, "hwdec", "auto-safe");
 
     if (mpv_initialize(state->mpv) < 0) {
         g_warning("Failed to initialize mpv");
@@ -132,6 +131,10 @@ static void run_mpv_command(AppState* state, std::vector<const char*> args) {
 
 static void send_loadfile(AppState* state, const std::string& uri, const std::string& mode) {
     run_mpv_command(state, {"loadfile", uri.c_str(), mode.c_str()});
+    if (ensure_mpv_running(state)) {
+        int pause = 0;
+        mpv_set_property(state->mpv, "pause", MPV_FORMAT_FLAG, &pause);
+    }
     if (mode == "replace") {
         state->current_media_uri = uri;
         set_playback_state(state, "Playing");
