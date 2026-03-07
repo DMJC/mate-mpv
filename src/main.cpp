@@ -11,6 +11,8 @@
 
 #include <cstdint>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -34,6 +36,9 @@ struct AppState {
     GtkWidget* player_context_menu = nullptr;
     GtkWidget* show_controls_item = nullptr;
     GtkWidget* menubar = nullptr;
+    GtkWidget* media_details_window = nullptr;
+    GtkWidget* media_details_label = nullptr;
+    GtkWidget* picture_adjustments_window = nullptr;
 
     mpv_handle* mpv = nullptr;
     mpv_render_context* mpv_render = nullptr;
@@ -131,6 +136,61 @@ static void run_mpv_command(AppState* state, std::vector<const char*> args) {
     const int status = mpv_command(state->mpv, args.data());
     if (status < 0) {
         g_warning("mpv command failed: %s", mpv_error_string(status));
+    }
+}
+
+static bool get_mpv_flag_property(AppState* state, const char* property, bool fallback = false) {
+    if (!ensure_mpv_running(state)) {
+        return fallback;
+    }
+
+    int flag = fallback ? 1 : 0;
+    if (mpv_get_property(state->mpv, property, MPV_FORMAT_FLAG, &flag) < 0) {
+        return fallback;
+    }
+    return flag != 0;
+}
+
+static bool get_mpv_double_property(AppState* state, const char* property, double* value) {
+    if (!value || !ensure_mpv_running(state)) {
+        return false;
+    }
+    return mpv_get_property(state->mpv, property, MPV_FORMAT_DOUBLE, value) >= 0;
+}
+
+static std::string get_mpv_string_property(AppState* state, const char* property) {
+    if (!ensure_mpv_running(state)) {
+        return "";
+    }
+
+    char* value = mpv_get_property_string(state->mpv, property);
+    if (!value) {
+        return "";
+    }
+
+    std::string output(value);
+    mpv_free(value);
+    return output;
+}
+
+static void set_mpv_flag_property(AppState* state, const char* property, bool value) {
+    if (!ensure_mpv_running(state)) {
+        return;
+    }
+
+    int flag = value ? 1 : 0;
+    if (mpv_set_property(state->mpv, property, MPV_FORMAT_FLAG, &flag) < 0) {
+        g_warning("Failed to set property '%s'", property);
+    }
+}
+
+static void set_mpv_double_property(AppState* state, const char* property, double value) {
+    if (!ensure_mpv_running(state)) {
+        return;
+    }
+
+    if (mpv_set_property(state->mpv, property, MPV_FORMAT_DOUBLE, &value) < 0) {
+        g_warning("Failed to set property '%s'", property);
     }
 }
 
@@ -553,9 +613,204 @@ static gboolean on_window_motion_notify(GtkWidget*, GdkEventMotion* event, gpoin
     return FALSE;
 }
 
-static void on_menu_placeholder_activate(GtkWidget* widget, gpointer) {
-    const char* label = gtk_menu_item_get_label(GTK_MENU_ITEM(widget));
-    g_message("Menu action '%s' is not implemented yet", label ? label : "(unknown)");
+static std::string format_mpv_double(double value, int precision = 2) {
+    std::ostringstream stream;
+    stream << std::fixed << std::setprecision(precision) << value;
+    return stream.str();
+}
+
+static void refresh_media_details(AppState* state) {
+    if (!state->media_details_label) {
+        return;
+    }
+
+    std::ostringstream details;
+    const std::string title = get_mpv_string_property(state, "media-title");
+    const std::string path = get_mpv_string_property(state, "path");
+    const std::string video_codec = get_mpv_string_property(state, "video-codec");
+    const std::string audio_codec = get_mpv_string_property(state, "audio-codec-name");
+
+    details << "Title: " << (title.empty() ? "(unknown)" : title) << '\n';
+    details << "Path: " << (path.empty() ? "(unknown)" : path) << '\n';
+
+    double duration = 0.0;
+    if (get_mpv_double_property(state, "duration", &duration) && duration > 0.0) {
+        details << "Duration: " << format_mpv_double(duration, 1) << " s\n";
+    } else {
+        details << "Duration: (unknown)\n";
+    }
+
+    double width = 0.0;
+    double height = 0.0;
+    if (get_mpv_double_property(state, "width", &width) && get_mpv_double_property(state, "height", &height) && width > 0 &&
+        height > 0) {
+        details << "Video: " << static_cast<int>(width) << "x" << static_cast<int>(height);
+        double fps = 0.0;
+        if (get_mpv_double_property(state, "estimated-vf-fps", &fps) && fps > 0.0) {
+            details << " @ " << format_mpv_double(fps) << " fps";
+        }
+        if (!video_codec.empty()) {
+            details << " (" << video_codec << ")";
+        }
+        details << '\n';
+    } else {
+        details << "Video: (none)\n";
+    }
+
+    if (!audio_codec.empty()) {
+        details << "Audio codec: " << audio_codec << '\n';
+    } else {
+        details << "Audio codec: (none)\n";
+    }
+
+    double channels = 0.0;
+    if (get_mpv_double_property(state, "audio-params/channel-count", &channels) && channels > 0.0) {
+        details << "Audio channels: " << static_cast<int>(channels) << '\n';
+    }
+
+    double sample_rate = 0.0;
+    if (get_mpv_double_property(state, "audio-params/samplerate", &sample_rate) && sample_rate > 0.0) {
+        details << "Sample rate: " << static_cast<int>(sample_rate) << " Hz\n";
+    }
+
+    gtk_label_set_text(GTK_LABEL(state->media_details_label), details.str().c_str());
+}
+
+static void on_media_details_activate(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+
+    if (!state->media_details_window) {
+        state->media_details_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+        gtk_window_set_title(GTK_WINDOW(state->media_details_window), "Media Details");
+        gtk_window_set_default_size(GTK_WINDOW(state->media_details_window), 480, 320);
+        gtk_window_set_transient_for(GTK_WINDOW(state->media_details_window), GTK_WINDOW(state->window));
+        gtk_window_set_destroy_with_parent(GTK_WINDOW(state->media_details_window), TRUE);
+
+        GtkWidget* scroller = gtk_scrolled_window_new(nullptr, nullptr);
+        gtk_container_set_border_width(GTK_CONTAINER(scroller), 12);
+        gtk_container_add(GTK_CONTAINER(state->media_details_window), scroller);
+
+        state->media_details_label = gtk_label_new("");
+        gtk_label_set_selectable(GTK_LABEL(state->media_details_label), TRUE);
+        gtk_label_set_xalign(GTK_LABEL(state->media_details_label), 0.0f);
+        gtk_label_set_yalign(GTK_LABEL(state->media_details_label), 0.0f);
+        gtk_label_set_line_wrap(GTK_LABEL(state->media_details_label), TRUE);
+        gtk_container_add(GTK_CONTAINER(scroller), state->media_details_label);
+    }
+
+    refresh_media_details(state);
+    gtk_widget_show_all(state->media_details_window);
+    gtk_window_present(GTK_WINDOW(state->media_details_window));
+}
+
+static void on_video_scale_changed(GtkRange* range, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    const char* property = static_cast<const char*>(g_object_get_data(G_OBJECT(range), "mpv-property"));
+    if (!property) {
+        return;
+    }
+    const double value = gtk_range_get_value(range);
+    set_mpv_double_property(state, property, value);
+}
+
+static void create_video_adjustment_row(AppState* state,
+                                        GtkWidget* grid,
+                                        int row,
+                                        const char* label_text,
+                                        const char* property) {
+    GtkWidget* label = gtk_label_new(label_text);
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    GtkWidget* scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, -100.0, 100.0, 1.0);
+    gtk_widget_set_hexpand(scale, TRUE);
+
+    double initial = 0.0;
+    if (get_mpv_double_property(state, property, &initial)) {
+        gtk_range_set_value(GTK_RANGE(scale), initial);
+    }
+
+    g_object_set_data_full(G_OBJECT(scale), "mpv-property", g_strdup(property), g_free);
+    g_signal_connect(scale, "value-changed", G_CALLBACK(on_video_scale_changed), state);
+
+    gtk_grid_attach(GTK_GRID(grid), label, 0, row, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), scale, 1, row, 1, 1);
+}
+
+static void on_video_picture_adjustments_activate(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+
+    if (!state->picture_adjustments_window) {
+        state->picture_adjustments_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+        gtk_window_set_title(GTK_WINDOW(state->picture_adjustments_window), "Video Picture Adjustments");
+        gtk_window_set_default_size(GTK_WINDOW(state->picture_adjustments_window), 420, 260);
+        gtk_window_set_transient_for(GTK_WINDOW(state->picture_adjustments_window), GTK_WINDOW(state->window));
+        gtk_window_set_destroy_with_parent(GTK_WINDOW(state->picture_adjustments_window), TRUE);
+
+        GtkWidget* grid = gtk_grid_new();
+        gtk_container_set_border_width(GTK_CONTAINER(grid), 12);
+        gtk_grid_set_row_spacing(GTK_GRID(grid), 10);
+        gtk_grid_set_column_spacing(GTK_GRID(grid), 12);
+        gtk_container_add(GTK_CONTAINER(state->picture_adjustments_window), grid);
+
+        create_video_adjustment_row(state, grid, 0, "Brightness", "brightness");
+        create_video_adjustment_row(state, grid, 1, "Contrast", "contrast");
+        create_video_adjustment_row(state, grid, 2, "Saturation", "saturation");
+        create_video_adjustment_row(state, grid, 3, "Gamma", "gamma");
+        create_video_adjustment_row(state, grid, 4, "Hue", "hue");
+    }
+
+    gtk_widget_show_all(state->picture_adjustments_window);
+    gtk_window_present(GTK_WINDOW(state->picture_adjustments_window));
+}
+
+static void on_window_scale_activate(GtkWidget* item, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    const char* zoom = static_cast<const char*>(g_object_get_data(G_OBJECT(item), "video-zoom"));
+    if (!zoom) {
+        return;
+    }
+    run_mpv_command(state, {"set", "video-zoom", zoom});
+}
+
+static void on_aspect_activate(GtkWidget* item, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    const char* aspect = static_cast<const char*>(g_object_get_data(G_OBJECT(item), "aspect-ratio"));
+    if (!aspect) {
+        return;
+    }
+    run_mpv_command(state, {"set", "video-aspect-override", aspect});
+}
+
+static void on_toggle_subtitles(GtkCheckMenuItem* item, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    set_mpv_flag_property(state, "sub-visibility", gtk_check_menu_item_get_active(item));
+}
+
+static void on_subtitle_scale_adjust(GtkWidget* item, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    const char* delta = static_cast<const char*>(g_object_get_data(G_OBJECT(item), "subtitle-scale-delta"));
+    if (!delta) {
+        return;
+    }
+    run_mpv_command(state, {"add", "sub-scale", delta});
+}
+
+static void on_subtitle_delay_adjust(GtkWidget* item, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    const char* delta = static_cast<const char*>(g_object_get_data(G_OBJECT(item), "subtitle-delay-delta"));
+    if (!delta) {
+        return;
+    }
+    run_mpv_command(state, {"add", "sub-delay", delta});
+}
+
+static void on_switch_angle_activate(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    run_mpv_command(state, {"cycle", "angle"});
+}
+
+static void on_audio_meter_activate(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    run_mpv_command(state, {"script-binding", "stats/display-stats-toggle"});
 }
 
 static GtkWidget* create_playback_controls(AppState* state) {
@@ -790,33 +1045,55 @@ static GtkWidget* create_menu_bar(AppState* state) {
     GtkWidget* controls_item = gtk_check_menu_item_new_with_label("Controls C");
     GtkWidget* video_picture_adjustments_item = gtk_menu_item_new_with_label("Video Picture Adjustments.");
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(playlist_item), TRUE);
+    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(controls_item), TRUE);
+    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(subtitles_item), get_mpv_flag_property(state, "sub-visibility", true));
+
     g_signal_connect(playlist_item, "toggled", G_CALLBACK(on_toggle_playlist), state);
     g_signal_connect(fullscreen_item, "toggled", G_CALLBACK(on_toggle_fullscreen), state);
-    g_signal_connect(media_info_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(details_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(audio_meter_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(fullscreen_item, "activate", G_CALLBACK(on_fullscreen_button_clicked), state);
-    g_signal_connect(normal_size_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(double_size_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(half_size_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(half_larger_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(aspect_3_2_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(aspect_4_3_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(aspect_5_4_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(aspect_9_16_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(aspect_16_9_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(aspect_16_10_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(aspect_21_9_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(aspect_185_1_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(aspect_235_1_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(subtitles_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(subtitle_smaller_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(subtitle_larger_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(subtitle_delay_down_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(subtitle_delay_up_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
-    g_signal_connect(switch_angle_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(media_info_item, "activate", G_CALLBACK(on_media_details_activate), state);
+    g_signal_connect(details_item, "activate", G_CALLBACK(on_media_details_activate), state);
+    g_signal_connect(audio_meter_item, "activate", G_CALLBACK(on_audio_meter_activate), state);
+
+    g_object_set_data(G_OBJECT(normal_size_item), "video-zoom", const_cast<char*>("0"));
+    g_object_set_data(G_OBJECT(double_size_item), "video-zoom", const_cast<char*>("1"));
+    g_object_set_data(G_OBJECT(half_size_item), "video-zoom", const_cast<char*>("-1"));
+    g_object_set_data(G_OBJECT(half_larger_item), "video-zoom", const_cast<char*>("0.5849625007"));
+    g_signal_connect(normal_size_item, "activate", G_CALLBACK(on_window_scale_activate), state);
+    g_signal_connect(double_size_item, "activate", G_CALLBACK(on_window_scale_activate), state);
+    g_signal_connect(half_size_item, "activate", G_CALLBACK(on_window_scale_activate), state);
+    g_signal_connect(half_larger_item, "activate", G_CALLBACK(on_window_scale_activate), state);
+
+    g_object_set_data(G_OBJECT(aspect_3_2_item), "aspect-ratio", const_cast<char*>("3:2"));
+    g_object_set_data(G_OBJECT(aspect_4_3_item), "aspect-ratio", const_cast<char*>("4:3"));
+    g_object_set_data(G_OBJECT(aspect_5_4_item), "aspect-ratio", const_cast<char*>("5:4"));
+    g_object_set_data(G_OBJECT(aspect_9_16_item), "aspect-ratio", const_cast<char*>("9:16"));
+    g_object_set_data(G_OBJECT(aspect_16_9_item), "aspect-ratio", const_cast<char*>("16:9"));
+    g_object_set_data(G_OBJECT(aspect_16_10_item), "aspect-ratio", const_cast<char*>("16:10"));
+    g_object_set_data(G_OBJECT(aspect_21_9_item), "aspect-ratio", const_cast<char*>("21:9"));
+    g_object_set_data(G_OBJECT(aspect_185_1_item), "aspect-ratio", const_cast<char*>("1.85"));
+    g_object_set_data(G_OBJECT(aspect_235_1_item), "aspect-ratio", const_cast<char*>("2.35"));
+    g_signal_connect(aspect_3_2_item, "activate", G_CALLBACK(on_aspect_activate), state);
+    g_signal_connect(aspect_4_3_item, "activate", G_CALLBACK(on_aspect_activate), state);
+    g_signal_connect(aspect_5_4_item, "activate", G_CALLBACK(on_aspect_activate), state);
+    g_signal_connect(aspect_9_16_item, "activate", G_CALLBACK(on_aspect_activate), state);
+    g_signal_connect(aspect_16_9_item, "activate", G_CALLBACK(on_aspect_activate), state);
+    g_signal_connect(aspect_16_10_item, "activate", G_CALLBACK(on_aspect_activate), state);
+    g_signal_connect(aspect_21_9_item, "activate", G_CALLBACK(on_aspect_activate), state);
+    g_signal_connect(aspect_185_1_item, "activate", G_CALLBACK(on_aspect_activate), state);
+    g_signal_connect(aspect_235_1_item, "activate", G_CALLBACK(on_aspect_activate), state);
+
+    g_signal_connect(subtitles_item, "toggled", G_CALLBACK(on_toggle_subtitles), state);
+    g_object_set_data(G_OBJECT(subtitle_smaller_item), "subtitle-scale-delta", const_cast<char*>("-0.1"));
+    g_object_set_data(G_OBJECT(subtitle_larger_item), "subtitle-scale-delta", const_cast<char*>("0.1"));
+    g_signal_connect(subtitle_smaller_item, "activate", G_CALLBACK(on_subtitle_scale_adjust), state);
+    g_signal_connect(subtitle_larger_item, "activate", G_CALLBACK(on_subtitle_scale_adjust), state);
+    g_object_set_data(G_OBJECT(subtitle_delay_down_item), "subtitle-delay-delta", const_cast<char*>("-0.1"));
+    g_object_set_data(G_OBJECT(subtitle_delay_up_item), "subtitle-delay-delta", const_cast<char*>("0.1"));
+    g_signal_connect(subtitle_delay_down_item, "activate", G_CALLBACK(on_subtitle_delay_adjust), state);
+    g_signal_connect(subtitle_delay_up_item, "activate", G_CALLBACK(on_subtitle_delay_adjust), state);
+    g_signal_connect(switch_angle_item, "activate", G_CALLBACK(on_switch_angle_activate), state);
     g_signal_connect(controls_item, "toggled", G_CALLBACK(on_toggle_controls), state);
-    g_signal_connect(video_picture_adjustments_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(video_picture_adjustments_item, "activate", G_CALLBACK(on_video_picture_adjustments_activate), state);
 
     gtk_menu_item_set_submenu(GTK_MENU_ITEM(aspect_item), aspect_menu);
     gtk_menu_shell_append(GTK_MENU_SHELL(aspect_menu), aspect_3_2_item);
