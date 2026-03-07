@@ -9,6 +9,7 @@ epoxy_dep = dependency('epoxy')
 executable(
   'mate-mpv',
   'src/main.cpp',
+  'src/langlist.cpp',
   dependencies: [gtk_dep, mpv_dep, epoxy_dep],
   install: true
 )
