@@ -1,11 +1,13 @@
 #include <gtk/gtk.h>
 #include <epoxy/gl.h>
+#include <epoxy/egl.h>
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
 #ifdef GDK_WINDOWING_WAYLAND
 #include <gdk/gdkwayland.h>
 #endif
 
+#include <cstdint>
 #include <fstream>
 #include <string>
 #include <utility>
@@ -145,7 +147,8 @@ static void send_seek_percent(AppState* state, double percent) {
 }
 
 static void* get_proc_address(void*, const char* name) {
-    return reinterpret_cast<void*>(epoxy_get_proc_address(name));
+    const auto proc = eglGetProcAddress(reinterpret_cast<const EGLchar*>(name));
+    return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(proc));
 }
 
 static gboolean queue_video_redraw(gpointer user_data) {
