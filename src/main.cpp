@@ -7,6 +7,8 @@
 #include <gdk/gdkwayland.h>
 #endif
 
+#include "langlist.h"
+
 #include <cstdint>
 #include <fstream>
 #include <string>
@@ -528,12 +530,108 @@ static GtkWidget* create_playback_controls(AppState* state) {
     return controls;
 }
 
+static void populate_language_dropdown(GtkComboBoxText* combo) {
+    gtk_combo_box_text_append_text(combo, "System Default");
+    for (int index = 0; langlist[index] != nullptr; ++index) {
+        const std::string entry = langlist[index];
+        const auto separator = entry.find(',');
+        if (separator == std::string::npos) {
+            gtk_combo_box_text_append_text(combo, entry.c_str());
+            continue;
+        }
+
+        const std::string language_name = trim_copy(entry.substr(0, separator));
+        const std::string codes = trim_copy(entry.substr(separator + 1));
+        if (language_name.empty()) {
+            continue;
+        }
+
+        const std::string label = codes.empty() ? language_name : language_name + " (" + codes + ")";
+        gtk_combo_box_text_append_text(combo, label.c_str());
+    }
+    gtk_combo_box_set_active(GTK_COMBO_BOX(combo), 0);
+}
+
+static GtkWidget* create_language_selection_tab(const char* primary_label_text,
+                                                const char* fallback_label_text) {
+    GtkWidget* grid = gtk_grid_new();
+    gtk_container_set_border_width(GTK_CONTAINER(grid), 12);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 8);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 12);
+
+    GtkWidget* primary_label = gtk_label_new(primary_label_text);
+    GtkWidget* fallback_label = gtk_label_new(fallback_label_text);
+    gtk_widget_set_halign(primary_label, GTK_ALIGN_START);
+    gtk_widget_set_halign(fallback_label, GTK_ALIGN_START);
+
+    GtkWidget* primary_combo = gtk_combo_box_text_new();
+    GtkWidget* fallback_combo = gtk_combo_box_text_new();
+    gtk_widget_set_hexpand(primary_combo, TRUE);
+    gtk_widget_set_hexpand(fallback_combo, TRUE);
+
+    populate_language_dropdown(GTK_COMBO_BOX_TEXT(primary_combo));
+    populate_language_dropdown(GTK_COMBO_BOX_TEXT(fallback_combo));
+
+    gtk_grid_attach(GTK_GRID(grid), primary_label, 0, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), primary_combo, 1, 0, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), fallback_label, 0, 1, 1, 1);
+    gtk_grid_attach(GTK_GRID(grid), fallback_combo, 1, 1, 1, 1);
+
+    return grid;
+}
+
+static GtkWidget* create_placeholder_tab(const char* text) {
+    GtkWidget* box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_container_set_border_width(GTK_CONTAINER(box), 12);
+    GtkWidget* label = gtk_label_new(text);
+    gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(box), label, FALSE, FALSE, 0);
+    return box;
+}
+
+static GtkWidget* create_preferences_notebook() {
+    GtkWidget* notebook = gtk_notebook_new();
+
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook),
+                             create_placeholder_tab("Player settings are not configured yet."),
+                             gtk_label_new("Player"));
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook),
+                             create_language_selection_tab("Primary language:", "Fallback language:"),
+                             gtk_label_new("Language Settings"));
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook),
+                             create_language_selection_tab("Primary subtitle language:",
+                                                           "Fallback subtitle language:"),
+                             gtk_label_new("Subtitles"));
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook),
+                             create_placeholder_tab("Interface settings are not configured yet."),
+                             gtk_label_new("Interface"));
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook),
+                             create_placeholder_tab("Keyboard shortcut settings are not configured yet."),
+                             gtk_label_new("Keyboard Shortcuts"));
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook),
+                             create_placeholder_tab("MPV settings are not configured yet."),
+                             gtk_label_new("MPV"));
+    gtk_notebook_append_page(GTK_NOTEBOOK(notebook),
+                             create_placeholder_tab("Plugin settings are not configured yet."),
+                             gtk_label_new("Plugin"));
+
+    return notebook;
+}
+
 static void on_preferences_activate(GtkWidget*, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
-    GtkWidget* msg = gtk_message_dialog_new(GTK_WINDOW(state->window), GTK_DIALOG_MODAL, GTK_MESSAGE_INFO,
-                                             GTK_BUTTONS_OK, "Preferences UI is not implemented yet.");
-    gtk_dialog_run(GTK_DIALOG(msg));
-    gtk_widget_destroy(msg);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Preferences", GTK_WINDOW(state->window),
+                                                     GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+                                                     "_Close", GTK_RESPONSE_CLOSE, nullptr);
+    gtk_window_set_default_size(GTK_WINDOW(dialog), 760, 520);
+
+    GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    GtkWidget* notebook = create_preferences_notebook();
+    gtk_box_pack_start(GTK_BOX(content), notebook, TRUE, TRUE, 0);
+    gtk_widget_show_all(dialog);
+
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
 }
 
 static void on_about_activate(GtkWidget*, gpointer user_data) {
