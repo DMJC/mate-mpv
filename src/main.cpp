@@ -2,6 +2,9 @@
 #include <epoxy/gl.h>
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
+#ifdef GDK_WINDOWING_WAYLAND
+#include <gdk/gdkwayland.h>
+#endif
 
 #include <fstream>
 #include <string>
@@ -30,6 +33,10 @@ struct AppState {
 
     mpv_handle* mpv = nullptr;
     mpv_render_context* mpv_render = nullptr;
+
+#ifdef GDK_WINDOWING_WAYLAND
+    wl_display* wl_display_handle = nullptr;
+#endif
 
     bool fullscreen = false;
     bool suppress_position_seek = false;
@@ -95,6 +102,9 @@ static bool ensure_mpv_running(AppState* state) {
     mpv_set_option_string(state->mpv, "terminal", "yes");
     mpv_set_option_string(state->mpv, "idle", "yes");
     mpv_set_option_string(state->mpv, "keep-open", "yes");
+    mpv_set_option_string(state->mpv, "vo", "gpu-next");
+    mpv_set_option_string(state->mpv, "gpu-context", "wayland");
+    mpv_set_option_string(state->mpv, "hwdec", "auto-safe");
 
     if (mpv_initialize(state->mpv) < 0) {
         g_warning("Failed to initialize mpv");
@@ -172,13 +182,34 @@ static void on_video_area_realize(GtkWidget* widget, gpointer user_data) {
         .get_proc_address_ctx = widget,
     };
 
+#ifdef GDK_WINDOWING_WAYLAND
+    GdkDisplay* gdk_display = gtk_widget_get_display(widget);
+    if (GDK_IS_WAYLAND_DISPLAY(gdk_display)) {
+        state->wl_display_handle = gdk_wayland_display_get_wl_display(gdk_display);
+    } else {
+        g_warning("Expected Wayland display backend for mate-mpv");
+    }
+#endif
+
     int advanced = 1;
+#ifdef MPV_RENDER_PARAM_WL_DISPLAY
+    mpv_render_param params[] = {
+        {MPV_RENDER_PARAM_API_TYPE, const_cast<char*>(MPV_RENDER_API_TYPE_OPENGL)},
+        {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &gl_init_params},
+#ifdef GDK_WINDOWING_WAYLAND
+        {MPV_RENDER_PARAM_WL_DISPLAY, state->wl_display_handle},
+#endif
+        {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced},
+        {MPV_RENDER_PARAM_INVALID, nullptr},
+    };
+#else
     mpv_render_param params[] = {
         {MPV_RENDER_PARAM_API_TYPE, const_cast<char*>(MPV_RENDER_API_TYPE_OPENGL)},
         {MPV_RENDER_PARAM_OPENGL_INIT_PARAMS, &gl_init_params},
         {MPV_RENDER_PARAM_ADVANCED_CONTROL, &advanced},
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
+#endif
 
     if (mpv_render_context_create(&state->mpv_render, state->mpv, params) < 0) {
         g_warning("Failed to create mpv render context");
@@ -621,6 +652,9 @@ static void activate(GtkApplication* app, gpointer user_data) {
     gtk_box_pack_start(GTK_BOX(root), paned, TRUE, TRUE, 0);
 
     state->video_area = gtk_gl_area_new();
+    gtk_gl_area_set_use_es(GTK_GL_AREA(state->video_area), FALSE);
+    gtk_gl_area_set_required_version(GTK_GL_AREA(state->video_area), 3, 2);
+    gtk_gl_area_set_auto_render(GTK_GL_AREA(state->video_area), FALSE);
     gtk_widget_set_hexpand(state->video_area, TRUE);
     gtk_widget_set_vexpand(state->video_area, TRUE);
     gtk_widget_set_size_request(state->video_area, 640, 360);
