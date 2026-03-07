@@ -621,7 +621,8 @@ static GtkWidget* create_preferences_notebook() {
 static void on_preferences_activate(GtkWidget*, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Preferences", GTK_WINDOW(state->window),
-                                                     GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+                                                     static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL |
+                                                                                 GTK_DIALOG_DESTROY_WITH_PARENT),
                                                      "_Close", GTK_RESPONSE_CLOSE, nullptr);
     gtk_window_set_default_size(GTK_WINDOW(dialog), 760, 520);
 
