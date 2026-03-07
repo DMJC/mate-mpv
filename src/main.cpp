@@ -307,8 +307,9 @@ static gboolean on_video_area_render(GtkGLArea* area, GdkGLContext*, gpointer us
         return TRUE;
     }
 
-    const int width = gtk_widget_get_allocated_width(GTK_WIDGET(area));
-    const int height = gtk_widget_get_allocated_height(GTK_WIDGET(area));
+    const int scale_factor = gtk_widget_get_scale_factor(GTK_WIDGET(area));
+    const int width = gtk_widget_get_allocated_width(GTK_WIDGET(area)) * scale_factor;
+    const int height = gtk_widget_get_allocated_height(GTK_WIDGET(area)) * scale_factor;
 
     GLint bound_fbo = 0;
     glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &bound_fbo);
