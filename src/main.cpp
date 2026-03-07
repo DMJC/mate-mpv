@@ -553,6 +553,11 @@ static gboolean on_window_motion_notify(GtkWidget*, GdkEventMotion* event, gpoin
     return FALSE;
 }
 
+static void on_menu_placeholder_activate(GtkWidget* widget, gpointer) {
+    const char* label = gtk_menu_item_get_label(GTK_MENU_ITEM(widget));
+    g_message("Menu action '%s' is not implemented yet", label ? label : "(unknown)");
+}
+
 static GtkWidget* create_playback_controls(AppState* state) {
     GtkWidget* controls = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_container_set_border_width(GTK_CONTAINER(controls), 8);
@@ -757,12 +762,94 @@ static GtkWidget* create_menu_bar(AppState* state) {
     gtk_menu_shell_append(GTK_MENU_SHELL(help_menu), about_item);
 
     GtkWidget* playlist_item = gtk_check_menu_item_new_with_label("Playlist");
+    GtkWidget* media_info_item = gtk_menu_item_new_with_label("Media Info");
+    GtkWidget* details_item = gtk_menu_item_new_with_label("Details");
+    GtkWidget* audio_meter_item = gtk_menu_item_new_with_label("Audio Meter");
     GtkWidget* fullscreen_item = gtk_check_menu_item_new_with_label("Full Screen");
+    GtkWidget* normal_size_item = gtk_menu_item_new_with_label("Normal (1:1)");
+    GtkWidget* double_size_item = gtk_menu_item_new_with_label("Double Size (2:1)");
+    GtkWidget* half_size_item = gtk_menu_item_new_with_label("Half Size (1:2)");
+    GtkWidget* half_larger_item = gtk_menu_item_new_with_label("Half Larger (1.5:1)");
+    GtkWidget* aspect_item = gtk_menu_item_new_with_label("Aspect");
+    GtkWidget* aspect_menu = gtk_menu_new();
+    GtkWidget* aspect_3_2_item = gtk_menu_item_new_with_label("3:2");
+    GtkWidget* aspect_4_3_item = gtk_menu_item_new_with_label("4:3");
+    GtkWidget* aspect_5_4_item = gtk_menu_item_new_with_label("5:4");
+    GtkWidget* aspect_9_16_item = gtk_menu_item_new_with_label("9:16");
+    GtkWidget* aspect_16_9_item = gtk_menu_item_new_with_label("16:9");
+    GtkWidget* aspect_16_10_item = gtk_menu_item_new_with_label("16:10");
+    GtkWidget* aspect_21_9_item = gtk_menu_item_new_with_label("21:9");
+    GtkWidget* aspect_185_1_item = gtk_menu_item_new_with_label("1.85:1");
+    GtkWidget* aspect_235_1_item = gtk_menu_item_new_with_label("2.35:1");
+    GtkWidget* subtitles_item = gtk_check_menu_item_new_with_label("Show subtitles");
+    GtkWidget* subtitle_smaller_item = gtk_menu_item_new_with_label("Decrease Subtitle Size");
+    GtkWidget* subtitle_larger_item = gtk_menu_item_new_with_label("Increase Subtitle Size");
+    GtkWidget* subtitle_delay_down_item = gtk_menu_item_new_with_label("Decrease Subtitle Delay");
+    GtkWidget* subtitle_delay_up_item = gtk_menu_item_new_with_label("Increase Subtitle Delay");
+    GtkWidget* switch_angle_item = gtk_menu_item_new_with_label("Switch Angle Ctrl-A");
+    GtkWidget* controls_item = gtk_check_menu_item_new_with_label("Controls C");
+    GtkWidget* video_picture_adjustments_item = gtk_menu_item_new_with_label("Video Picture Adjustments.");
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(playlist_item), TRUE);
     g_signal_connect(playlist_item, "toggled", G_CALLBACK(on_toggle_playlist), state);
     g_signal_connect(fullscreen_item, "toggled", G_CALLBACK(on_toggle_fullscreen), state);
+    g_signal_connect(media_info_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(details_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(audio_meter_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(fullscreen_item, "activate", G_CALLBACK(on_fullscreen_button_clicked), state);
+    g_signal_connect(normal_size_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(double_size_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(half_size_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(half_larger_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(aspect_3_2_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(aspect_4_3_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(aspect_5_4_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(aspect_9_16_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(aspect_16_9_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(aspect_16_10_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(aspect_21_9_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(aspect_185_1_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(aspect_235_1_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(subtitles_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(subtitle_smaller_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(subtitle_larger_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(subtitle_delay_down_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(subtitle_delay_up_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(switch_angle_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+    g_signal_connect(controls_item, "toggled", G_CALLBACK(on_toggle_controls), state);
+    g_signal_connect(video_picture_adjustments_item, "activate", G_CALLBACK(on_menu_placeholder_activate), nullptr);
+
+    gtk_menu_item_set_submenu(GTK_MENU_ITEM(aspect_item), aspect_menu);
+    gtk_menu_shell_append(GTK_MENU_SHELL(aspect_menu), aspect_3_2_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(aspect_menu), aspect_4_3_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(aspect_menu), aspect_5_4_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(aspect_menu), aspect_9_16_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(aspect_menu), aspect_16_9_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(aspect_menu), aspect_16_10_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(aspect_menu), aspect_21_9_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(aspect_menu), aspect_185_1_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(aspect_menu), aspect_235_1_item);
+
     gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), playlist_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), media_info_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), details_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), audio_meter_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), gtk_separator_menu_item_new());
     gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), fullscreen_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), gtk_separator_menu_item_new());
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), normal_size_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), double_size_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), half_size_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), half_larger_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), aspect_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), subtitles_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), subtitle_smaller_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), subtitle_larger_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), subtitle_delay_down_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), subtitle_delay_up_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), gtk_separator_menu_item_new());
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), switch_angle_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), controls_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(view_menu), video_picture_adjustments_item);
 
     state->playlist_toggle_item = playlist_item;
     state->fullscreen_toggle_item = fullscreen_item;
