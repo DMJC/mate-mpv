@@ -44,6 +44,7 @@ struct AppState {
 
     bool fullscreen = false;
     bool suppress_position_seek = false;
+    guint position_update_source = 0;
     std::string current_media_uri;
 };
 
@@ -52,6 +53,8 @@ enum PlaylistColumns {
     COL_URI,
     COL_COUNT
 };
+
+static void on_open_files_activate(GtkWidget*, gpointer user_data);
 
 static void set_playback_state(AppState* state, const char* status) {
     if (!state->playback_state_label) {
@@ -311,6 +314,34 @@ static void on_position_value_changed(GtkRange* range, gpointer user_data) {
     }
 }
 
+static gboolean update_position_scale(gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    if (!state->position_scale || !state->mpv) {
+        return G_SOURCE_CONTINUE;
+    }
+
+    double duration = 0.0;
+    double time_pos = 0.0;
+    if (mpv_get_property(state->mpv, "duration", MPV_FORMAT_DOUBLE, &duration) < 0 || duration <= 0.0) {
+        return G_SOURCE_CONTINUE;
+    }
+    if (mpv_get_property(state->mpv, "time-pos", MPV_FORMAT_DOUBLE, &time_pos) < 0) {
+        return G_SOURCE_CONTINUE;
+    }
+
+    double percent = (time_pos / duration) * 100.0;
+    if (percent < 0.0) {
+        percent = 0.0;
+    } else if (percent > 100.0) {
+        percent = 100.0;
+    }
+
+    state->suppress_position_seek = true;
+    gtk_range_set_value(GTK_RANGE(state->position_scale), percent);
+    state->suppress_position_seek = false;
+    return G_SOURCE_CONTINUE;
+}
+
 static void on_volume_value_changed(GtkRange* range, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
     if (!ensure_mpv_running(state)) {
@@ -351,6 +382,55 @@ static gboolean on_video_area_button_press(GtkWidget*, GdkEventButton* event, gp
     }
     gtk_menu_popup_at_pointer(GTK_MENU(state->player_context_menu), reinterpret_cast<GdkEvent*>(event));
     return TRUE;
+}
+
+static gboolean on_window_key_press(GtkWidget*, GdkEventKey* event, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    if (!event) {
+        return FALSE;
+    }
+
+    const guint modifiers = event->state & gtk_accelerator_get_default_mod_mask();
+    if (modifiers == GDK_CONTROL_MASK && (event->keyval == GDK_KEY_o || event->keyval == GDK_KEY_O)) {
+        on_open_files_activate(nullptr, state);
+        return TRUE;
+    }
+
+    if (modifiers != 0) {
+        return FALSE;
+    }
+
+    if (event->keyval == GDK_KEY_f || event->keyval == GDK_KEY_F) {
+        set_fullscreen_state(state, !state->fullscreen);
+        return TRUE;
+    }
+
+    if (event->keyval == GDK_KEY_space) {
+        on_play_pause_clicked(nullptr, state);
+        return TRUE;
+    }
+
+    if (event->keyval == GDK_KEY_c || event->keyval == GDK_KEY_C) {
+        if (state->show_controls_item) {
+            const gboolean controls_visible = gtk_widget_get_visible(state->playback_controls);
+            gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->show_controls_item), !controls_visible);
+        } else {
+            gtk_widget_set_visible(state->playback_controls, !gtk_widget_get_visible(state->playback_controls));
+        }
+        return TRUE;
+    }
+
+    if (event->keyval == GDK_KEY_p || event->keyval == GDK_KEY_P) {
+        const gboolean playlist_visible = gtk_widget_get_visible(state->playlist_scroller);
+        if (state->playlist_toggle_item) {
+            gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->playlist_toggle_item), !playlist_visible);
+        } else {
+            gtk_widget_set_visible(state->playlist_scroller, !playlist_visible);
+        }
+        return TRUE;
+    }
+
+    return FALSE;
 }
 
 static void add_playlist_entry(AppState* state, const std::string& title, const std::string& uri) {
@@ -792,14 +872,24 @@ static void activate(GtkApplication* app, gpointer user_data) {
     gtk_widget_set_events(state->video_area, gtk_widget_get_events(state->video_area) | GDK_BUTTON_PRESS_MASK);
     g_signal_connect(state->video_area, "button-press-event", G_CALLBACK(on_video_area_button_press), state);
 
-    gtk_widget_add_events(state->window, GDK_POINTER_MOTION_MASK);
+    gtk_widget_add_events(state->window, GDK_POINTER_MOTION_MASK | GDK_KEY_PRESS_MASK);
     g_signal_connect(state->window, "motion-notify-event", G_CALLBACK(on_window_motion_notify), state);
+    g_signal_connect(state->window, "key-press-event", G_CALLBACK(on_window_key_press), state);
 
     gtk_widget_show_all(state->window);
+
+    if (state->position_update_source == 0) {
+        state->position_update_source = g_timeout_add(250, update_position_scale, state);
+    }
 }
 
 static void shutdown_app(GApplication*, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
+
+    if (state->position_update_source != 0) {
+        g_source_remove(state->position_update_source);
+        state->position_update_source = 0;
+    }
 
     if (state->mpv) {
         run_mpv_command(state, {"quit"});
