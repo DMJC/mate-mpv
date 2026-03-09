@@ -1318,6 +1318,12 @@ static GtkWidget* create_playback_controls(AppState* state) {
     gtk_widget_set_tooltip_text(fast_forward_button, "Fast Forward");
     gtk_widget_set_tooltip_text(skip_forward_button, "Next in Playlist");
 
+    state->position_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 100.0, 1.0);
+    gtk_scale_set_draw_value(GTK_SCALE(state->position_scale), FALSE);
+    gtk_widget_set_hexpand(state->position_scale, TRUE);
+    state->playback_state_label = gtk_label_new("Playback state: Stopped");
+    gtk_label_set_xalign(GTK_LABEL(state->playback_state_label), 0.0f);
+
     gtk_box_pack_start(GTK_BOX(button_row), skip_backward_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(button_row), start_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(button_row), rewind_button, FALSE, FALSE, 0);
@@ -1325,16 +1331,9 @@ static GtkWidget* create_playback_controls(AppState* state) {
     gtk_box_pack_start(GTK_BOX(button_row), stop_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(button_row), fast_forward_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(button_row), skip_forward_button, FALSE, FALSE, 0);
-
-    state->position_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 100.0, 1.0);
-    gtk_scale_set_draw_value(GTK_SCALE(state->position_scale), FALSE);
-    gtk_widget_set_hexpand(state->position_scale, TRUE);
-
-    state->playback_state_label = gtk_label_new("Playback state: Stopped");
-    gtk_label_set_xalign(GTK_LABEL(state->playback_state_label), 0.0f);
+    gtk_box_pack_start(GTK_BOX(button_row), state->position_scale, FALSE, TRUE, 0);
 
     gtk_box_pack_start(GTK_BOX(center_column), button_row, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(center_column), state->position_scale, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(center_column), state->playback_state_label, FALSE, FALSE, 0);
 
     GtkWidget* right_column = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
