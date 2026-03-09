@@ -1,6 +1,7 @@
 #include <gtk/gtk.h>
 #include <epoxy/gl.h>
 #include <epoxy/egl.h>
+#include <glib/gstdio.h>
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
 #ifdef GDK_WINDOWING_WAYLAND
@@ -55,6 +56,17 @@ struct AppState {
     std::string current_media_uri;
 };
 
+struct AppConfig {
+    int window_width = 1280;
+    int window_height = 720;
+    bool playlist_visible = true;
+    bool controls_visible = true;
+    bool fullscreen = false;
+    double volume = 100.0;
+    std::string audio_language;
+    std::string subtitle_language;
+};
+
 enum PlaylistColumns {
     COL_TITLE = 0,
     COL_URI,
@@ -63,6 +75,7 @@ enum PlaylistColumns {
 
 static void on_open_files_activate(GtkWidget*, gpointer user_data);
 static void on_open_url_activate(GtkWidget*, gpointer user_data);
+static std::string get_mpv_string_property(AppState* state, const char* property);
 
 static std::string file_basename(const std::string& path) {
     const auto slash = path.find_last_of('/');
@@ -113,6 +126,134 @@ static std::string trim_copy(const std::string& value) {
     }
     const auto end = value.find_last_not_of(" \t\r\n");
     return value.substr(start, end - start + 1);
+}
+
+static std::string app_config_path() {
+    return std::string(g_get_home_dir()) + "/.config/mate/mate-mpv/mate-mpv.conf";
+}
+
+static AppConfig load_app_config() {
+    AppConfig config;
+    GKeyFile* key_file = g_key_file_new();
+    GError* error = nullptr;
+    const std::string path = app_config_path();
+
+    if (!g_key_file_load_from_file(key_file, path.c_str(), G_KEY_FILE_NONE, &error)) {
+        if (error && !(error->domain == G_FILE_ERROR && error->code == G_FILE_ERROR_NOENT)) {
+            g_warning("Failed to load config '%s': %s", path.c_str(), error->message);
+        }
+        if (error) {
+            g_error_free(error);
+        }
+        g_key_file_unref(key_file);
+        return config;
+    }
+
+    if (g_key_file_has_key(key_file, "window", "width", nullptr)) {
+        config.window_width = g_key_file_get_integer(key_file, "window", "width", nullptr);
+    }
+    if (g_key_file_has_key(key_file, "window", "height", nullptr)) {
+        config.window_height = g_key_file_get_integer(key_file, "window", "height", nullptr);
+    }
+    if (g_key_file_has_key(key_file, "interface", "playlist_visible", nullptr)) {
+        config.playlist_visible = g_key_file_get_boolean(key_file, "interface", "playlist_visible", nullptr);
+    }
+    if (g_key_file_has_key(key_file, "interface", "controls_visible", nullptr)) {
+        config.controls_visible = g_key_file_get_boolean(key_file, "interface", "controls_visible", nullptr);
+    }
+    if (g_key_file_has_key(key_file, "window", "fullscreen", nullptr)) {
+        config.fullscreen = g_key_file_get_boolean(key_file, "window", "fullscreen", nullptr);
+    }
+    if (g_key_file_has_key(key_file, "player", "volume", nullptr)) {
+        config.volume = g_key_file_get_double(key_file, "player", "volume", nullptr);
+    }
+    if (g_key_file_has_key(key_file, "player", "audio_language", nullptr)) {
+        gchar* audio_language = g_key_file_get_string(key_file, "player", "audio_language", nullptr);
+        if (audio_language) {
+            config.audio_language = audio_language;
+            g_free(audio_language);
+        }
+    }
+    if (g_key_file_has_key(key_file, "player", "subtitle_language", nullptr)) {
+        gchar* subtitle_language = g_key_file_get_string(key_file, "player", "subtitle_language", nullptr);
+        if (subtitle_language) {
+            config.subtitle_language = subtitle_language;
+            g_free(subtitle_language);
+        }
+    }
+
+    g_key_file_unref(key_file);
+
+    if (config.window_width < 320) {
+        config.window_width = 320;
+    }
+    if (config.window_height < 240) {
+        config.window_height = 240;
+    }
+    if (config.volume < 0.0) {
+        config.volume = 0.0;
+    } else if (config.volume > 100.0) {
+        config.volume = 100.0;
+    }
+
+    return config;
+}
+
+static void save_app_config(AppState* state) {
+    if (!state || !state->window) {
+        return;
+    }
+
+    const std::string path = app_config_path();
+    const std::string directory = path.substr(0, path.find_last_of('/'));
+    if (g_mkdir_with_parents(directory.c_str(), 0755) != 0) {
+        g_warning("Failed to create config directory '%s'", directory.c_str());
+        return;
+    }
+
+    GKeyFile* key_file = g_key_file_new();
+    int width = 0;
+    int height = 0;
+    gtk_window_get_size(GTK_WINDOW(state->window), &width, &height);
+
+    g_key_file_set_integer(key_file, "window", "width", width);
+    g_key_file_set_integer(key_file, "window", "height", height);
+    g_key_file_set_boolean(key_file, "window", "fullscreen", state->fullscreen);
+    g_key_file_set_boolean(key_file,
+                           "interface",
+                           "playlist_visible",
+                           state->playlist_sidebar ? gtk_widget_get_visible(state->playlist_sidebar) : true);
+    g_key_file_set_boolean(key_file,
+                           "interface",
+                           "controls_visible",
+                           state->playback_controls ? gtk_widget_get_visible(state->playback_controls) : true);
+    g_key_file_set_double(key_file,
+                          "player",
+                          "volume",
+                          state->volume_scale ? gtk_range_get_value(GTK_RANGE(state->volume_scale)) : 100.0);
+
+    const std::string audio_language = state->mpv ? get_mpv_string_property(state, "alang") : "";
+    const std::string subtitle_language = state->mpv ? get_mpv_string_property(state, "slang") : "";
+    g_key_file_set_string(key_file, "player", "audio_language", audio_language.c_str());
+    g_key_file_set_string(key_file, "player", "subtitle_language", subtitle_language.c_str());
+
+    gsize length = 0;
+    gchar* serialized = g_key_file_to_data(key_file, &length, nullptr);
+    g_key_file_unref(key_file);
+    if (!serialized) {
+        g_warning("Failed to serialize app config");
+        return;
+    }
+
+    GError* error = nullptr;
+    if (!g_file_set_contents(path.c_str(), serialized, static_cast<gssize>(length), &error)) {
+        g_warning("Failed to save config '%s': %s", path.c_str(), error ? error->message : "unknown error");
+        if (error) {
+            g_error_free(error);
+        }
+    }
+
+    g_free(serialized);
 }
 
 static bool ensure_mpv_running(AppState* state) {
@@ -205,6 +346,16 @@ static void set_mpv_double_property(AppState* state, const char* property, doubl
     }
 
     if (mpv_set_property(state->mpv, property, MPV_FORMAT_DOUBLE, &value) < 0) {
+        g_warning("Failed to set property '%s'", property);
+    }
+}
+
+static void set_mpv_string_property(AppState* state, const char* property, const std::string& value) {
+    if (!ensure_mpv_running(state)) {
+        return;
+    }
+
+    if (mpv_set_property_string(state->mpv, property, value.c_str()) < 0) {
         g_warning("Failed to set property '%s'", property);
     }
 }
@@ -1543,10 +1694,11 @@ static GtkWidget* create_player_context_menu(AppState* state) {
 static void activate(GtkApplication* app, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
     state->app = app;
+    const AppConfig config = load_app_config();
 
     state->window = gtk_application_window_new(app);
     gtk_window_set_title(GTK_WINDOW(state->window), "mate-mpv");
-    gtk_window_set_default_size(GTK_WINDOW(state->window), 1024, 640);
+    gtk_window_set_default_size(GTK_WINDOW(state->window), config.window_width, config.window_height);
 
     GtkWidget* root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(state->window), root);
@@ -1632,6 +1784,39 @@ static void activate(GtkApplication* app, gpointer user_data) {
 
     gtk_widget_show_all(state->window);
 
+    if (state->volume_scale) {
+        gtk_range_set_value(GTK_RANGE(state->volume_scale), config.volume);
+    }
+    if (ensure_mpv_running(state)) {
+        set_mpv_double_property(state, "volume", config.volume);
+        if (!config.audio_language.empty()) {
+            set_mpv_string_property(state, "alang", config.audio_language);
+        }
+        if (!config.subtitle_language.empty()) {
+            set_mpv_string_property(state, "slang", config.subtitle_language);
+        }
+    }
+
+    if (state->playlist_sidebar) {
+        gtk_widget_set_visible(state->playlist_sidebar, config.playlist_visible);
+    }
+    if (state->playlist_toggle_item) {
+        gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->playlist_toggle_item), config.playlist_visible);
+    }
+    if (state->context_playlist_toggle_item) {
+        gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->context_playlist_toggle_item), config.playlist_visible);
+    }
+    if (state->playback_controls) {
+        gtk_widget_set_visible(state->playback_controls, config.controls_visible);
+    }
+    if (state->show_controls_item) {
+        gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->show_controls_item), config.controls_visible);
+    }
+
+    if (config.fullscreen) {
+        set_fullscreen_state(state, true);
+    }
+
     if (state->position_update_source == 0) {
         state->position_update_source = g_timeout_add(250, update_position_scale, state);
     }
@@ -1639,6 +1824,8 @@ static void activate(GtkApplication* app, gpointer user_data) {
 
 static void shutdown_app(GApplication*, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
+
+    save_app_config(state);
 
     if (state->position_update_source != 0) {
         g_source_remove(state->position_update_source);
