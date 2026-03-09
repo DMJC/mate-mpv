@@ -457,6 +457,122 @@ static void on_copy_location_activate(GtkWidget*, gpointer user_data) {
     gtk_clipboard_set_text(clipboard, state->current_media_uri.c_str(), -1);
 }
 
+static void show_message_dialog(GtkWindow* parent, GtkMessageType type, const char* message) {
+    GtkWidget* dialog = gtk_message_dialog_new(parent,
+                                               GTK_DIALOG_MODAL,
+                                               type,
+                                               GTK_BUTTONS_OK,
+                                               "%s",
+                                               message);
+    gtk_dialog_run(GTK_DIALOG(dialog));
+    gtk_widget_destroy(dialog);
+}
+
+static bool dump_audio_to_wav(AppState* state, const std::string& output_file, std::string* error) {
+    std::string source_uri = get_mpv_string_property(state, "path");
+    if (source_uri.empty()) {
+        source_uri = state->current_media_uri;
+    }
+    if (source_uri.empty()) {
+        if (error) {
+            *error = "No media is currently loaded.";
+        }
+        return false;
+    }
+
+    mpv_handle* dumper = mpv_create();
+    if (!dumper) {
+        if (error) {
+            *error = "Failed to create mpv instance for audio dump.";
+        }
+        return false;
+    }
+
+    mpv_set_option_string(dumper, "terminal", "no");
+    mpv_set_option_string(dumper, "vid", "no");
+    mpv_set_option_string(dumper, "audio-display", "no");
+    mpv_set_option_string(dumper, "ao", "pcm");
+    mpv_set_option_string(dumper, "ao-pcm-file", output_file.c_str());
+    mpv_set_option_string(dumper, "ao-pcm-waveheader", "yes");
+
+    int status = mpv_initialize(dumper);
+    if (status < 0) {
+        if (error) {
+            *error = std::string("Failed to initialize mpv for audio dump: ") + mpv_error_string(status);
+        }
+        mpv_terminate_destroy(dumper);
+        return false;
+    }
+
+    const char* load_cmd[] = {"loadfile", source_uri.c_str(), "replace", nullptr};
+    status = mpv_command(dumper, load_cmd);
+    if (status < 0) {
+        if (error) {
+            *error = std::string("Failed to start audio dump: ") + mpv_error_string(status);
+        }
+        mpv_terminate_destroy(dumper);
+        return false;
+    }
+
+    for (;;) {
+        mpv_event* event = mpv_wait_event(dumper, 0.1);
+        if (!event) {
+            continue;
+        }
+        if (event->event_id == MPV_EVENT_END_FILE) {
+            auto* end_file = static_cast<mpv_event_end_file*>(event->data);
+            if (end_file && end_file->error < 0 && error) {
+                *error = std::string("Audio dump failed: ") + mpv_error_string(end_file->error);
+                mpv_terminate_destroy(dumper);
+                return false;
+            }
+            break;
+        }
+        if (event->event_id == MPV_EVENT_SHUTDOWN) {
+            break;
+        }
+    }
+
+    mpv_terminate_destroy(dumper);
+    return true;
+}
+
+static void on_dump_audio_activate(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    GtkWidget* dialog = gtk_file_chooser_dialog_new("Dump Audio",
+                                                     GTK_WINDOW(state->window),
+                                                     GTK_FILE_CHOOSER_ACTION_SAVE,
+                                                     "_Cancel",
+                                                     GTK_RESPONSE_CANCEL,
+                                                     "_Save",
+                                                     GTK_RESPONSE_ACCEPT,
+                                                     nullptr);
+    gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(dialog), TRUE);
+    gtk_file_chooser_set_current_name(GTK_FILE_CHOOSER(dialog), "audio_dump.wav");
+
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        char* filename = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
+        if (filename) {
+            std::string output(filename);
+            g_free(filename);
+
+            if (!g_str_has_suffix(output.c_str(), ".wav")) {
+                output += ".wav";
+            }
+
+            std::string error;
+            if (dump_audio_to_wav(state, output, &error)) {
+                std::string message = std::string("Audio dumped to:\n") + output;
+                show_message_dialog(GTK_WINDOW(state->window), GTK_MESSAGE_INFO, message.c_str());
+            } else {
+                show_message_dialog(GTK_WINDOW(state->window), GTK_MESSAGE_ERROR, error.c_str());
+            }
+        }
+    }
+
+    gtk_widget_destroy(dialog);
+}
+
 static void on_toggle_controls(GtkCheckMenuItem* item, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
     gtk_widget_set_visible(state->playback_controls, gtk_check_menu_item_get_active(item));
@@ -1209,9 +1325,13 @@ static GtkWidget* create_menu_bar(AppState* state) {
     gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), quit_item);
 
     GtkWidget* prefs_item = gtk_menu_item_new_with_label("Preferences");
+    GtkWidget* dump_audio_item = gtk_menu_item_new_with_label("Dump Audio");
     GtkWidget* about_item = gtk_menu_item_new_with_label("About");
     g_signal_connect(prefs_item, "activate", G_CALLBACK(on_preferences_activate), state);
+    g_signal_connect(dump_audio_item, "activate", G_CALLBACK(on_dump_audio_activate), state);
     g_signal_connect(about_item, "activate", G_CALLBACK(on_about_activate), state);
+    gtk_menu_shell_append(GTK_MENU_SHELL(edit_menu), dump_audio_item);
+    gtk_menu_shell_append(GTK_MENU_SHELL(edit_menu), gtk_separator_menu_item_new());
     gtk_menu_shell_append(GTK_MENU_SHELL(edit_menu), prefs_item);
     gtk_menu_shell_append(GTK_MENU_SHELL(help_menu), about_item);
 
