@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Mate MPV
+Comment=Play Video Files
+X-GNOME-Gettext-Domain=mate-mpv
+Exec=mate-mpv
+Icon=/usr/share/mate-mpv/data/icons/48x48/mate-mpv.xpm
+Terminal=false
+Categories=AudioVideo;Player;
+Keywords=Player;Capture;DVD;Audio;Video;Server;Broadcast;
+StartupNotify=true
