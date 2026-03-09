@@ -75,6 +75,7 @@ enum PlaylistColumns {
 
 static void on_open_files_activate(GtkWidget*, gpointer user_data);
 static void on_open_url_activate(GtkWidget*, gpointer user_data);
+static std::string get_mpv_string_property(AppState* state, const char* property);
 
 static std::string file_basename(const std::string& path) {
     const auto slash = path.find_last_of('/');
