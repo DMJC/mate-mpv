@@ -33,6 +33,7 @@ struct AppState {
     GtkWidget* position_scale = nullptr;
     GtkWidget* volume_scale = nullptr;
     GtkWidget* playback_controls = nullptr;
+    GtkWidget* play_pause_image = nullptr;
     GtkWidget* player_context_menu = nullptr;
     GtkWidget* show_controls_item = nullptr;
     GtkWidget* menubar = nullptr;
@@ -67,6 +68,13 @@ static void set_playback_state(AppState* state, const char* status) {
     }
     std::string text = std::string("Playback state: ") + status;
     gtk_label_set_text(GTK_LABEL(state->playback_state_label), text.c_str());
+
+    if (state->play_pause_image) {
+        const char* icon_name = g_strcmp0(status, "Playing") == 0
+            ? "media-playback-pause"
+            : "media-playback-start";
+        gtk_image_set_from_icon_name(GTK_IMAGE(state->play_pause_image), icon_name, GTK_ICON_SIZE_BUTTON);
+    }
 }
 
 static void set_menubar_visibility(AppState* state, bool visible) {
@@ -365,6 +373,18 @@ static void on_stop_clicked(GtkWidget*, gpointer user_data) {
 static void on_fast_forward_clicked(GtkWidget*, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
     send_seek_relative(state, 10);
+    set_playback_state(state, "Playing");
+}
+
+static void on_skip_backward_clicked(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    run_mpv_command(state, {"playlist-prev", "force"});
+    set_playback_state(state, "Playing");
+}
+
+static void on_skip_forward_clicked(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    run_mpv_command(state, {"playlist-next", "force"});
     set_playback_state(state, "Playing");
 }
 
@@ -822,17 +842,38 @@ static GtkWidget* create_playback_controls(AppState* state) {
     gtk_widget_set_hexpand(center_column, TRUE);
 
     GtkWidget* button_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    GtkWidget* start_button = gtk_button_new_with_label("Return to Start");
-    GtkWidget* rewind_button = gtk_button_new_with_label("Rewind");
-    GtkWidget* play_pause_button = gtk_button_new_with_label("Play/Pause");
-    GtkWidget* stop_button = gtk_button_new_with_label("Stop");
-    GtkWidget* fast_forward_button = gtk_button_new_with_label("Fast Forward");
+    GtkWidget* skip_backward_button = gtk_button_new();
+    GtkWidget* start_button = gtk_button_new();
+    GtkWidget* rewind_button = gtk_button_new();
+    GtkWidget* play_pause_button = gtk_button_new();
+    GtkWidget* stop_button = gtk_button_new();
+    GtkWidget* fast_forward_button = gtk_button_new();
+    GtkWidget* skip_forward_button = gtk_button_new();
 
+    gtk_button_set_image(GTK_BUTTON(skip_backward_button), gtk_image_new_from_icon_name("media-skip-backward", GTK_ICON_SIZE_BUTTON));
+    gtk_button_set_image(GTK_BUTTON(start_button), gtk_image_new_from_icon_name("media-skip-backward", GTK_ICON_SIZE_BUTTON));
+    gtk_button_set_image(GTK_BUTTON(rewind_button), gtk_image_new_from_icon_name("media-seek-backward", GTK_ICON_SIZE_BUTTON));
+    state->play_pause_image = gtk_image_new_from_icon_name("media-playback-start", GTK_ICON_SIZE_BUTTON);
+    gtk_button_set_image(GTK_BUTTON(play_pause_button), state->play_pause_image);
+    gtk_button_set_image(GTK_BUTTON(stop_button), gtk_image_new_from_icon_name("media-playback-stop", GTK_ICON_SIZE_BUTTON));
+    gtk_button_set_image(GTK_BUTTON(fast_forward_button), gtk_image_new_from_icon_name("media-seek-forward", GTK_ICON_SIZE_BUTTON));
+    gtk_button_set_image(GTK_BUTTON(skip_forward_button), gtk_image_new_from_icon_name("media-skip-forward", GTK_ICON_SIZE_BUTTON));
+
+    gtk_widget_set_tooltip_text(skip_backward_button, "Previous in Playlist");
+    gtk_widget_set_tooltip_text(start_button, "Return to Start");
+    gtk_widget_set_tooltip_text(rewind_button, "Rewind");
+    gtk_widget_set_tooltip_text(play_pause_button, "Play/Pause");
+    gtk_widget_set_tooltip_text(stop_button, "Stop");
+    gtk_widget_set_tooltip_text(fast_forward_button, "Fast Forward");
+    gtk_widget_set_tooltip_text(skip_forward_button, "Next in Playlist");
+
+    gtk_box_pack_start(GTK_BOX(button_row), skip_backward_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(button_row), start_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(button_row), rewind_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(button_row), play_pause_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(button_row), stop_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(button_row), fast_forward_button, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(button_row), skip_forward_button, FALSE, FALSE, 0);
 
     state->position_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 100.0, 1.0);
     gtk_scale_set_draw_value(GTK_SCALE(state->position_scale), FALSE);
@@ -850,7 +891,9 @@ static GtkWidget* create_playback_controls(AppState* state) {
     state->volume_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 100.0, 1.0);
     gtk_range_set_value(GTK_RANGE(state->volume_scale), 100.0);
     gtk_widget_set_size_request(state->volume_scale, 140, -1);
-    GtkWidget* fullscreen_button = gtk_button_new_with_label("Fullscreen");
+    GtkWidget* fullscreen_button = gtk_button_new();
+    gtk_button_set_image(GTK_BUTTON(fullscreen_button), gtk_image_new_from_icon_name("view-fullscreen", GTK_ICON_SIZE_BUTTON));
+    gtk_widget_set_tooltip_text(fullscreen_button, "Fullscreen");
 
     gtk_box_pack_start(GTK_BOX(right_column), volume_label, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(right_column), state->volume_scale, FALSE, FALSE, 0);
@@ -859,11 +902,13 @@ static GtkWidget* create_playback_controls(AppState* state) {
     gtk_box_pack_start(GTK_BOX(controls), center_column, TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(controls), right_column, FALSE, FALSE, 0);
 
+    g_signal_connect(skip_backward_button, "clicked", G_CALLBACK(on_skip_backward_clicked), state);
     g_signal_connect(start_button, "clicked", G_CALLBACK(on_return_to_start_clicked), state);
     g_signal_connect(rewind_button, "clicked", G_CALLBACK(on_rewind_clicked), state);
     g_signal_connect(play_pause_button, "clicked", G_CALLBACK(on_play_pause_clicked), state);
     g_signal_connect(stop_button, "clicked", G_CALLBACK(on_stop_clicked), state);
     g_signal_connect(fast_forward_button, "clicked", G_CALLBACK(on_fast_forward_clicked), state);
+    g_signal_connect(skip_forward_button, "clicked", G_CALLBACK(on_skip_forward_clicked), state);
     g_signal_connect(state->position_scale, "value-changed", G_CALLBACK(on_position_value_changed), state);
     g_signal_connect(state->volume_scale, "value-changed", G_CALLBACK(on_volume_value_changed), state);
     g_signal_connect(fullscreen_button, "clicked", G_CALLBACK(on_fullscreen_button_clicked), state);
