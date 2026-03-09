@@ -62,6 +62,7 @@ enum PlaylistColumns {
 };
 
 static void on_open_files_activate(GtkWidget*, gpointer user_data);
+static void on_open_url_activate(GtkWidget*, gpointer user_data);
 
 static std::string file_basename(const std::string& path) {
     const auto slash = path.find_last_of('/');
@@ -670,6 +671,36 @@ static void on_open_files_activate(GtkWidget*, gpointer user_data) {
         add_playlist_entry(state, file_basename(path), path);
         send_loadfile(state, path, i == 0 ? "replace" : "append-play");
     }
+}
+
+static void on_open_url_activate(GtkWidget*, gpointer user_data) {
+    auto* state = static_cast<AppState*>(user_data);
+    GtkWidget* dialog = gtk_dialog_new_with_buttons("Open URL/Stream",
+                                                     GTK_WINDOW(state->window),
+                                                     GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+                                                     "_Cancel", GTK_RESPONSE_CANCEL,
+                                                     "_Open", GTK_RESPONSE_ACCEPT,
+                                                     nullptr);
+
+    GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    GtkWidget* entry = gtk_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(entry), "https://example.com/stream");
+    gtk_box_pack_start(GTK_BOX(content), entry, FALSE, FALSE, 8);
+    gtk_widget_show_all(dialog);
+    gtk_widget_grab_focus(entry);
+
+    if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+        const gchar* uri_text = gtk_entry_get_text(GTK_ENTRY(entry));
+        if (uri_text) {
+            const std::string uri = trim_copy(uri_text);
+            if (!uri.empty()) {
+                add_playlist_entry(state, uri, uri);
+                send_loadfile(state, uri, "append-play");
+            }
+        }
+    }
+
+    gtk_widget_destroy(dialog);
 }
 
 static std::vector<std::string> load_playlist_paths_from_file(const std::string& filename) {
@@ -1313,13 +1344,16 @@ static GtkWidget* create_menu_bar(AppState* state) {
     GtkWidget* help_menu = gtk_menu_new();
 
     GtkWidget* open_files = gtk_menu_item_new_with_label("Open File(s)...");
+    GtkWidget* open_url = gtk_menu_item_new_with_label("Open URL/Stream...");
     GtkWidget* open_tv = gtk_menu_item_new_with_label("Open TV://");
     GtkWidget* quit_item = gtk_menu_item_new_with_label("Quit");
     g_signal_connect(open_files, "activate", G_CALLBACK(on_open_files_activate), state);
+    g_signal_connect(open_url, "activate", G_CALLBACK(on_open_url_activate), state);
     g_signal_connect(open_tv, "activate", G_CALLBACK(on_open_tv_activate), state);
     g_signal_connect_swapped(quit_item, "activate", G_CALLBACK(gtk_window_close), state->window);
 
     gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), open_files);
+    gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), open_url);
     gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), open_tv);
     gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), gtk_separator_menu_item_new());
     gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), quit_item);
