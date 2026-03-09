@@ -63,6 +63,8 @@ struct AppConfig {
     bool controls_visible = true;
     bool fullscreen = false;
     double volume = 100.0;
+    std::string audio_language;
+    std::string subtitle_language;
 };
 
 enum PlaylistColumns {
@@ -164,6 +166,20 @@ static AppConfig load_app_config() {
     if (g_key_file_has_key(key_file, "player", "volume", nullptr)) {
         config.volume = g_key_file_get_double(key_file, "player", "volume", nullptr);
     }
+    if (g_key_file_has_key(key_file, "player", "audio_language", nullptr)) {
+        gchar* audio_language = g_key_file_get_string(key_file, "player", "audio_language", nullptr);
+        if (audio_language) {
+            config.audio_language = audio_language;
+            g_free(audio_language);
+        }
+    }
+    if (g_key_file_has_key(key_file, "player", "subtitle_language", nullptr)) {
+        gchar* subtitle_language = g_key_file_get_string(key_file, "player", "subtitle_language", nullptr);
+        if (subtitle_language) {
+            config.subtitle_language = subtitle_language;
+            g_free(subtitle_language);
+        }
+    }
 
     g_key_file_unref(key_file);
 
@@ -214,6 +230,11 @@ static void save_app_config(AppState* state) {
                           "player",
                           "volume",
                           state->volume_scale ? gtk_range_get_value(GTK_RANGE(state->volume_scale)) : 100.0);
+
+    const std::string audio_language = state->mpv ? get_mpv_string_property(state, "alang") : "";
+    const std::string subtitle_language = state->mpv ? get_mpv_string_property(state, "slang") : "";
+    g_key_file_set_string(key_file, "player", "audio_language", audio_language.c_str());
+    g_key_file_set_string(key_file, "player", "subtitle_language", subtitle_language.c_str());
 
     gsize length = 0;
     gchar* serialized = g_key_file_to_data(key_file, &length, nullptr);
@@ -324,6 +345,16 @@ static void set_mpv_double_property(AppState* state, const char* property, doubl
     }
 
     if (mpv_set_property(state->mpv, property, MPV_FORMAT_DOUBLE, &value) < 0) {
+        g_warning("Failed to set property '%s'", property);
+    }
+}
+
+static void set_mpv_string_property(AppState* state, const char* property, const std::string& value) {
+    if (!ensure_mpv_running(state)) {
+        return;
+    }
+
+    if (mpv_set_property_string(state->mpv, property, value.c_str()) < 0) {
         g_warning("Failed to set property '%s'", property);
     }
 }
@@ -1757,6 +1788,12 @@ static void activate(GtkApplication* app, gpointer user_data) {
     }
     if (ensure_mpv_running(state)) {
         set_mpv_double_property(state, "volume", config.volume);
+        if (!config.audio_language.empty()) {
+            set_mpv_string_property(state, "alang", config.audio_language);
+        }
+        if (!config.subtitle_language.empty()) {
+            set_mpv_string_property(state, "slang", config.subtitle_language);
+        }
     }
 
     if (state->playlist_sidebar) {
