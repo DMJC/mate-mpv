@@ -677,7 +677,7 @@ static void on_open_url_activate(GtkWidget*, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
     GtkWidget* dialog = gtk_dialog_new_with_buttons("Open URL/Stream",
                                                      GTK_WINDOW(state->window),
-                                                     GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT,
+                                                     static_cast<GtkDialogFlags>(GTK_DIALOG_MODAL | GTK_DIALOG_DESTROY_WITH_PARENT),
                                                      "_Cancel", GTK_RESPONSE_CANCEL,
                                                      "_Open", GTK_RESPONSE_ACCEPT,
                                                      nullptr);
