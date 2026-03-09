@@ -23,6 +23,7 @@ struct AppState {
     GtkApplication* app = nullptr;
     GtkWidget* window = nullptr;
     GtkWidget* video_area = nullptr;
+    GtkWidget* playlist_sidebar = nullptr;
     GtkWidget* playlist_scroller = nullptr;
     GtkWidget* playlist_view = nullptr;
     GtkListStore* playlist_store = nullptr;
@@ -507,11 +508,11 @@ static gboolean on_window_key_press(GtkWidget*, GdkEventKey* event, gpointer use
     }
 
     if (event->keyval == GDK_KEY_p || event->keyval == GDK_KEY_P) {
-        const gboolean playlist_visible = gtk_widget_get_visible(state->playlist_scroller);
+        const gboolean playlist_visible = gtk_widget_get_visible(state->playlist_sidebar);
         if (state->playlist_toggle_item) {
             gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(state->playlist_toggle_item), !playlist_visible);
         } else {
-            gtk_widget_set_visible(state->playlist_scroller, !playlist_visible);
+            gtk_widget_set_visible(state->playlist_sidebar, !playlist_visible);
         }
         return TRUE;
     }
@@ -762,7 +763,7 @@ static void on_playlist_row_activated(GtkTreeView* tree_view, GtkTreePath* path,
 static void on_toggle_playlist(GtkCheckMenuItem* item, gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
     gboolean active = gtk_check_menu_item_get_active(item);
-    gtk_widget_set_visible(state->playlist_scroller, active);
+    gtk_widget_set_visible(state->playlist_sidebar, active);
 
     if (state->playlist_toggle_item && GTK_WIDGET(item) != state->playlist_toggle_item) {
         g_signal_handlers_block_by_func(state->playlist_toggle_item, reinterpret_cast<gpointer>(on_toggle_playlist), state);
@@ -1421,13 +1422,13 @@ static void activate(GtkApplication* app, gpointer user_data) {
     gtk_tree_view_append_column(GTK_TREE_VIEW(state->playlist_view), column);
     g_signal_connect(state->playlist_view, "row-activated", G_CALLBACK(on_playlist_row_activated), state);
 
-    GtkWidget* playlist_sidebar = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    gtk_widget_set_size_request(playlist_sidebar, 260, -1);
+    state->playlist_sidebar = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_size_request(state->playlist_sidebar, 260, -1);
 
     state->playlist_scroller = gtk_scrolled_window_new(nullptr, nullptr);
     gtk_widget_set_vexpand(state->playlist_scroller, TRUE);
     gtk_container_add(GTK_CONTAINER(state->playlist_scroller), state->playlist_view);
-    gtk_box_pack_start(GTK_BOX(playlist_sidebar), state->playlist_scroller, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(state->playlist_sidebar), state->playlist_scroller, TRUE, TRUE, 0);
 
     GtkWidget* playlist_button_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     gtk_widget_set_halign(playlist_button_bar, GTK_ALIGN_CENTER);
@@ -1459,10 +1460,10 @@ static void activate(GtkApplication* app, gpointer user_data) {
     gtk_box_pack_start(GTK_BOX(playlist_button_bar), remove_selected_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(playlist_button_bar), move_up_button, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(playlist_button_bar), move_down_button, FALSE, FALSE, 0);
-    gtk_box_pack_end(GTK_BOX(playlist_sidebar), playlist_button_bar, FALSE, FALSE, 0);
+    gtk_box_pack_end(GTK_BOX(state->playlist_sidebar), playlist_button_bar, FALSE, FALSE, 0);
 
     gtk_paned_pack1(GTK_PANED(paned), state->video_area, TRUE, FALSE);
-    gtk_paned_pack2(GTK_PANED(paned), playlist_sidebar, FALSE, FALSE);
+    gtk_paned_pack2(GTK_PANED(paned), state->playlist_sidebar, FALSE, FALSE);
 
     state->playback_controls = create_playback_controls(state);
     gtk_box_pack_end(GTK_BOX(root), state->playback_controls, FALSE, FALSE, 0);
