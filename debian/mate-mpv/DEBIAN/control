@@ -1,0 +1,13 @@
+Package: mate-mpv
+Version: 0.1.0-1
+Architecture: amd64
+Maintainer: James <james@localhost>
+Installed-Size: 160
+Depends: libc6 (>= 2.34), libepoxy0 (>= 1.0), libgcc-s1 (>= 3.0), libglib2.0-0t64 (>= 2.36.0), libgtk-3-0t64 (>= 3.21.5), libmpv2 (>= 0.29), libstdc++6 (>= 12), libgtk-3-0
+Section: video
+Priority: optional
+Description: GTK3 frontend for mpv media player
+ mate-mpv is the spiritual successor to GNOME-Mplayer, providing a
+ simple and clean GTK3 interface for the mpv media player. It supports
+ audio and video playback with subtitle and audio track selection,
+ persistent language preferences, and full-screen mode.

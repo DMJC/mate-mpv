@@ -1,0 +1,13 @@
+51fbcd0880e3b26f63c53c7304805ba2  usr/bin/mate-mpv
+e0f04801928123cd832835147d2d7444  usr/share/applications/mate-mpv.desktop
+2fc45f4fa2291f817d1c9cf9e4b43a7a  usr/share/doc/mate-mpv/changelog.Debian.gz
+bcbcfd7605825d013979a6a6441fa3b8  usr/share/doc/mate-mpv/copyright
+0d2911ea91a6f32f66edf3157909bd5b  usr/share/mate-mpv/data/icons/16x16/actions/media-playback-pause.xpm
+9e7c18dc79cc490ad10d962deb903809  usr/share/mate-mpv/data/icons/16x16/actions/media-playback-start.xpm
+8086c999d6405af23dc01cc2aaa5a310  usr/share/mate-mpv/data/icons/16x16/actions/media-playback-stop.xpm
+6a71e9099ba90c144ece7196f3a5167d  usr/share/mate-mpv/data/icons/16x16/actions/media-seek-backward.xpm
+d74267c4579fe08842f956e4e6564424  usr/share/mate-mpv/data/icons/16x16/actions/media-seek-forward.xpm
+8259f4dd9da6b2a0d44e968427d369fb  usr/share/mate-mpv/data/icons/16x16/actions/media-skip-backward.xpm
+62baa0e2d1fd5ce0a2c4892639725803  usr/share/mate-mpv/data/icons/16x16/actions/media-skip-forward.xpm
+eb4803deebdf56eee340d7046fa82631  usr/share/mate-mpv/data/icons/16x16/actions/view-fullscreen.xpm
+1385dea2606a3bfc2b8ad4dbd2dd47ba  usr/share/mate-mpv/data/icons/48x48/mate-mpv.xpm

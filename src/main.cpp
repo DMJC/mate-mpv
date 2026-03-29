@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2024-2026 James Carthew <jcarthew@gmail.com>
+
 #include <gtk/gtk.h>
 #include <epoxy/gl.h>
 #include <epoxy/egl.h>
