@@ -125,8 +125,7 @@ jobs:
   Built packages:
   - Debian Bookworm (amd64)
   - Ubuntu Noble (amd64)
-
-  These packages are built automatically and may be unstable." \
+  #These packages are built automatically and may be unstable.
             --prerelease \
             --target main \
             release-assets/*.deb \
