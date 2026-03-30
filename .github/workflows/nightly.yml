@@ -5,6 +5,9 @@ on:
     - cron: '0 2 * * *'   # 02:00 UTC every day
   workflow_dispatch:        # allow manual trigger
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   deb-package:
     name: Debian package (${{ matrix.distro }})
