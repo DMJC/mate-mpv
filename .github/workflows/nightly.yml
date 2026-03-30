@@ -49,6 +49,7 @@ jobs:
       - name: Set nightly version
         id: version
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           BASE_VERSION=$(dpkg-parsechangelog --show-field Version | sed 's/-[^-]*$//')
           DATE=$(date -u +%Y%m%d)
           COMMIT=$(git rev-parse --short HEAD)
