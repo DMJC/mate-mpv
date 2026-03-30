@@ -50,7 +50,7 @@ jobs:
         run: |
           BASE_VERSION=$(dpkg-parsechangelog --show-field Version | sed 's/-[^-]*$//')
           DATE=$(date -u +%Y%m%d)
-          COMMIT=${GITHUB_SHA::8}
+          COMMIT=$(echo "$GITHUB_SHA" | cut -c1-8)
           NIGHTLY_VERSION="${BASE_VERSION}~nightly${DATE}.${COMMIT}-1"
           echo "version=${NIGHTLY_VERSION}" >> "$GITHUB_OUTPUT"
           echo "Nightly version: ${NIGHTLY_VERSION}"
@@ -59,7 +59,7 @@ jobs:
         run: |
           NIGHTLY_VERSION="${{ steps.version.outputs.version }}"
           DISTRO="${{ matrix.distro }}"
-          COMMIT=${GITHUB_SHA::8}
+          COMMIT=$(echo "$GITHUB_SHA" | cut -c1-8)
           dch --newversion "${NIGHTLY_VERSION}" \
               --distribution "${DISTRO}" \
               --force-distribution \
@@ -120,7 +120,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DATE=$(date -u +%Y-%m-%d)
-          COMMIT=${GITHUB_SHA::8}
+          COMMIT=$(echo "$GITHUB_SHA" | cut -c1-8)
           cat > /tmp/release-notes.md << EOF
           Automated nightly build from commit ${COMMIT} on ${DATE}.
 
