@@ -43,16 +43,14 @@ jobs:
             gettext \
             libgtk-3-dev \
             libmpv-dev \
-            libepoxy-dev \
-            git
+            libepoxy-dev
 
       - name: Set nightly version
         id: version
         run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           BASE_VERSION=$(dpkg-parsechangelog --show-field Version | sed 's/-[^-]*$//')
           DATE=$(date -u +%Y%m%d)
-          COMMIT=$(git rev-parse --short HEAD)
+          COMMIT=${GITHUB_SHA::8}
           NIGHTLY_VERSION="${BASE_VERSION}~nightly${DATE}.${COMMIT}-1"
           echo "version=${NIGHTLY_VERSION}" >> "$GITHUB_OUTPUT"
           echo "Nightly version: ${NIGHTLY_VERSION}"
@@ -61,10 +59,11 @@ jobs:
         run: |
           NIGHTLY_VERSION="${{ steps.version.outputs.version }}"
           DISTRO="${{ matrix.distro }}"
+          COMMIT=${GITHUB_SHA::8}
           dch --newversion "${NIGHTLY_VERSION}" \
               --distribution "${DISTRO}" \
               --force-distribution \
-              "Nightly build $(date -u +%Y-%m-%d) ($(git rev-parse --short HEAD))"
+              "Nightly build $(date -u +%Y-%m-%d) (${COMMIT})"
 
       - name: Build Debian package
         run: dpkg-buildpackage -us -uc -b
@@ -121,7 +120,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DATE=$(date -u +%Y-%m-%d)
-          COMMIT=$(git rev-parse --short HEAD)
+          COMMIT=${GITHUB_SHA::8}
           cat > /tmp/release-notes.md << EOF
           Automated nightly build from commit ${COMMIT} on ${DATE}.
 
