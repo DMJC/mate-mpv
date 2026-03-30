@@ -33,11 +33,11 @@ jobs:
             build-essential \
             devscripts \
             debhelper \
-            dh-meson \
             meson \
             ninja-build \
             pkg-config \
             g++ \
+            gettext \
             libgtk-3-dev \
             libmpv-dev \
             libepoxy-dev \
@@ -118,14 +118,18 @@ jobs:
         run: |
           DATE=$(date -u +%Y-%m-%d)
           COMMIT=$(git rev-parse --short HEAD)
+          cat > /tmp/release-notes.md << EOF
+          Automated nightly build from commit ${COMMIT} on ${DATE}.
+
+          Built packages:
+          - Debian Bookworm (amd64)
+          - Ubuntu Noble (amd64)
+
+          These packages are built automatically and may be unstable.
+          EOF
           gh release create nightly \
             --title "Nightly build ${DATE}" \
-            --notes "Automated nightly build from commit ${COMMIT} on ${DATE}.
-
-  Built packages:
-  - Debian Bookworm (amd64)
-  - Ubuntu Noble (amd64)
-  #These packages are built automatically and may be unstable.
+            --notes-file /tmp/release-notes.md \
             --prerelease \
             --target main \
             release-assets/*.deb \
