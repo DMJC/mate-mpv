@@ -56,6 +56,9 @@ jobs:
           echo "Nightly version: ${NIGHTLY_VERSION}"
 
       - name: Update debian/changelog for nightly
+        env:
+          DEBEMAIL: jcarthew@gmail.com
+          DEBFULLNAME: James Carthew
         run: |
           NIGHTLY_VERSION="${{ steps.version.outputs.version }}"
           DISTRO="${{ matrix.distro }}"
@@ -63,6 +66,7 @@ jobs:
           dch --newversion "${NIGHTLY_VERSION}" \
               --distribution "${DISTRO}" \
               --force-distribution \
+              -b \
               "Nightly build $(date -u +%Y-%m-%d) (${COMMIT})"
 
       - name: Build Debian package
