@@ -13,6 +13,8 @@
 
 #include "langlist.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <fstream>
 #include <iomanip>
@@ -390,6 +392,36 @@ static void* get_proc_address(void*, const char* name) {
     return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(proc));
 }
 
+static bool contains_case_insensitive(std::string value, const std::string& token) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value.find(token) != std::string::npos;
+}
+
+static void apply_intel_hwdec_workaround(AppState* state) {
+    if (!state || !state->mpv) {
+        return;
+    }
+
+    const auto* vendor_ptr = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+    const auto* renderer_ptr = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+
+    const std::string vendor = vendor_ptr ? vendor_ptr : "";
+    const std::string renderer = renderer_ptr ? renderer_ptr : "";
+
+    const bool is_intel = contains_case_insensitive(vendor, "intel") || contains_case_insensitive(renderer, "intel");
+    if (!is_intel) {
+        return;
+    }
+
+    if (mpv_set_property_string(state->mpv, "hwdec", "no") >= 0) {
+        g_message("Detected Intel GPU (%s / %s); disabled hwdec to avoid playback hangs", vendor.c_str(), renderer.c_str());
+    } else {
+        g_warning("Detected Intel GPU but failed to disable hwdec");
+    }
+}
+
 static gboolean queue_video_redraw(gpointer user_data) {
     auto* state = static_cast<AppState*>(user_data);
     if (state->video_area) {
@@ -414,6 +446,8 @@ static void on_video_area_realize(GtkWidget* widget, gpointer user_data) {
         g_warning("GL area failed to initialize");
         return;
     }
+
+    apply_intel_hwdec_workaround(state);
 
     if (state->mpv_render) {
         return;
